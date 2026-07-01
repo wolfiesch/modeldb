@@ -16,18 +16,45 @@ sources
   → consume (new-model-drop workflow, notebooks, charts, exports)
 ```
 
+## Quickstart
+
+The committed `viz/out/*.png` gallery is viewable as-is. To rebuild the database
+and re-render the charts from a fresh clone:
+
+```bash
+# 1. Python deps (ingest + resolve + store pipeline)
+pip install -r requirements.txt
+
+# 2. Create the SQLite database from schema + source seed
+python db/init.py
+
+# 3. Populate it: fetch live sources -> resolve identity -> promote facts
+python -m store.pipeline            # add --no-fetch to reuse existing raw snapshots
+
+# 4. JS deps + render the charts (writes viz/out/*.png)
+bun install
+for f in viz/*.mjs; do bun "$f"; done
+```
+
+> The DB (`db/modeldb.sqlite`, ~100 MB) and raw snapshots (`data/raw/`) are
+> git-ignored because they are regenerable. `store/pipeline.py` fetches live
+> sources, so a rebuild reflects source state at run time, not a frozen fixture.
+
 ## Status
 
-**M0 scaffold.** The repo currently contains:
+**M1 working.** Ingest parsers, the resolve/store pipeline, and the
+visualization layer are implemented and produce a populated database plus a
+rendered chart gallery.
 
 | Area | Status |
 |---|---|
-| Schema | `db/schema.sql` defines the SQLite spine. |
+| Schema | `db/schema.sql` defines the SQLite spine; `db/init.py` applies it. |
 | Source registry | `db/seed_sources.sql` ranks and describes the source catalog. |
-| Ingest base | `ingest/base.py` defines the parser interface and snapshot plumbing. |
-| Docs | `docs/PLAN.md`, `docs/SCHEMA.md`, `docs/SOURCES.md`, and `docs/REPO.md`. |
-
-Parser implementations, resolver entrypoints, the `new-model-drop` skill, and visualization/export helpers are milestone work.
+| Ingest | `ingest/` parsers for models.dev, OpenRouter, Epoch, LMArena, and more. |
+| Pipeline | `store/pipeline.py` runs ingest → spine → bridge → promote facts. |
+| Visualization | `viz/` shared lib + 9 charts (frontier, elo_over_time, model_landing, and 6 Sonnet 5 launch visuals); 7-tool bake-off in `viz/bakeoff/`. |
+| Skill | `.claude/skills/new-model-drop/` research + viz workflow. |
+| Docs | `docs/PLAN.md`, `docs/SCHEMA.md`, `docs/SOURCES.md`, `docs/REPO.md`. |
 
 ## Start here
 
