@@ -54,11 +54,24 @@ export function shortName(slug) {
     /^claude-(\d+(?:\.\d+)?)-(haiku|sonnet|opus)/i,
     (_, gen, tier) => `${tier}-${gen}`
   )
-  return name
+  name = name
     .replace(/^claude-/, '')
     .replace(/^gemini-/, '')
     .replace(/^gpt-/, 'GPT-')
     .replace(/-/g, ' ')
     .replace(/\b([a-z])/g, (letter) => letter.toUpperCase())
     .trim()
+  // Restore brand/acronym casing the title-case pass flattened.
+  const BRAND_CASING = [
+    [/\bGlm\b/g, 'GLM'],
+    [/\bDeepseek\b/g, 'DeepSeek'],
+    [/\bKimi K2\b/g, 'Kimi K2'],
+    [/\bMimo\b/g, 'MiMo'],
+    [/\bQwq\b/g, 'QwQ'],
+    [/\bLlama\b/g, 'Llama']
+  ]
+  for (const [pattern, replacement] of BRAND_CASING) {
+    name = name.replace(pattern, replacement)
+  }
+  return name
 }

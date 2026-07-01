@@ -8,339 +8,346 @@ import {
   shortName,
   plotStyle,
   HIGHLIGHT,
-  GRID,
-  AXIS,
   INK,
   MUTED,
-  FAINT
+  FAINT,
+  GRID,
+  AXIS,
+  NEUTRAL
 } from './lib/theme.mjs'
+import { resolvePeers, standardPrice } from './lib/peers.mjs'
 
-const TARGET_ID = 75
-const LAUNCH_SPEC = {
-  input_price: 2,
-  output_price: 10,
-  cache_read_price: 0.2,
-  context_window: 1_000_000,
-  max_output: 128_000
-}
-
-const SQL = `
-WITH price AS (
-  SELECT
-    model_id,
-    MAX(CASE WHEN component = 'input_token' THEN normalized_usd_per_1m_tokens END) AS input_price,
-    MAX(CASE WHEN component = 'output_token' THEN normalized_usd_per_1m_tokens END) AS output_price,
-    MAX(CASE WHEN component = 'cache_read' THEN normalized_usd_per_1m_tokens END) AS cache_read_price
-  FROM price_component
-  WHERE source_id = 'models_dev'
-  GROUP BY model_id
-), caps AS (
-  SELECT
-    model_id,
-    MAX(CASE WHEN capability = 'context_window' THEN CAST(value AS INTEGER) END) AS context_window,
-    MAX(CASE WHEN capability = 'max_output' THEN CAST(value AS INTEGER) END) AS max_output
-  FROM model_capability
-  WHERE capability IN ('context_window', 'max_output')
-  GROUP BY model_id
-)
+const peers = resolvePeers()
+const CAPABILITY_SQL = `
 SELECT
-  m.id,
-  m.canonical_slug AS slug,
-  m.developer_id AS developer,
-  m.release_date,
-  price.input_price,
-  price.output_price,
-  price.cache_read_price,
-  caps.context_window,
-  caps.max_output
-FROM model m
-LEFT JOIN price ON price.model_id = m.id
-LEFT JOIN caps ON caps.model_id = m.id
+  model_id,
+  capability,
+  MAX(CAST(value AS INTEGER)) AS value
+FROM model_capability
+WHERE capability IN ('context_window', 'max_output')
+  AND model_id IN (${peers.map(() => '?').join(',')})
+GROUP BY model_id, capability
 `
 
-const models = queryRows(SQL)
-const target = models.find((model) => model.id === TARGET_ID)
-if (!target) {
-  throw new Error('Claude Sonnet 5 (model id 75) was not found.')
+const capabilityRows = queryRows(CAPABILITY_SQL, peers.map((peer) => peer.id))
+const capabilityByModel = new Map()
+for (const row of capabilityRows) {
+  const caps = capabilityByModel.get(row.model_id) ?? {}
+  caps[row.capability] = Number(row.value)
+  capabilityByModel.set(row.model_id, caps)
 }
 
-const formatDollars = (value) => `$${Number(value).toFixed(2)} / 1M`
-const formatTokens = (value) => `${Number(value).toLocaleString('en-US')} tokens`
-const isPresent = (value) => value !== null && value !== undefined && Number.isFinite(Number(value))
-
-function specRow({ id, label, field, rawValue, biggerIsBetter, format }) {
-  const targetValue = Number(rawValue)
-  const values = models
-    .map((model) => (model.id === TARGET_ID ? targetValue : Number(model[field])))
-    .filter((value) => Number.isFinite(value) && value > 0)
-  if (!Number.isFinite(targetValue) || targetValue <= 0) {
-    throw new Error(`Claude Sonnet 5 is missing ${label}.`)
+function requireNumber(value, label) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error(`Missing positive value for ${label}.`)
   }
-  if (values.length === 0) {
-    throw new Error(`No comparison distribution for ${label}.`)
+  return number
+}
+
+function trimDecimal(value) {
+  return value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+}
+
+function priceLabel(value) {
+  const number = Number(value)
+  if (Number.isInteger(number)) {
+    return `$${number}`
   }
+  if (number < 0.01) {
+    return `$${trimDecimal(number.toFixed(4))}`
+  }
+  if (number < 1) {
+    return `$${Number.isInteger(number * 100) ? number.toFixed(2) : trimDecimal(number.toFixed(3))}`
+  }
+  return `$${trimDecimal(number.toFixed(3))}`
+}
 
-  const favorableCount = values.filter((value) => (biggerIsBetter ? value <= targetValue : value >= targetValue)).length
-  const favorability = Math.max(0, Math.min(100, favorableCount / values.length * 100))
-  const roundedFavorability = Math.round(favorability)
-  const topPercent = Math.max(1, 100 - roundedFavorability)
+function compactTokens(value) {
+  const number = Number(value)
+  if (number >= 1_000_000) {
+    if (number % 1_000 === 0) {
+      return `${(number / 1_000_000).toFixed(2).replace(/\.00$/, '').replace(/0$/, '')}M`
+    }
+    return `${(number / 1_048_576).toFixed(2).replace(/\.00$/, '').replace(/0$/, '')}M`
+  }
+  if (number % 1_000 === 0) {
+    return `${Math.round(number / 1_000)}K`
+  }
+  return `${Math.round(number / 1_024)}K`
+}
 
+const modelRows = peers.map((peer) => {
+  const caps = capabilityByModel.get(peer.id) ?? {}
   return {
-    id,
-    label,
-    favorability,
-    raw: format(targetValue),
-    tag: `top ${topPercent}%`,
-    caption: biggerIsBetter ? 'bigger spec ranks higher' : 'lower price ranks higher',
-    n: values.length
+    id: peer.id,
+    slug: peer.canonical_slug,
+    developer: peer.developer_id,
+    label: shortName(peer.canonical_slug),
+    isHero: peer.isHero,
+    inputPrice: requireNumber(standardPrice(peer.id, 'input_token'), `${peer.canonical_slug} input price`),
+    outputPrice: requireNumber(standardPrice(peer.id, 'output_token'), `${peer.canonical_slug} output price`),
+    cacheReadPrice: requireNumber(standardPrice(peer.id, 'cache_read'), `${peer.canonical_slug} cache-read price`),
+    contextWindow: requireNumber(caps.context_window, `${peer.canonical_slug} context window`),
+    maxOutput: requireNumber(caps.max_output, `${peer.canonical_slug} max output`)
   }
+})
+
+if (modelRows.length !== 7) {
+  throw new Error(`Expected 7 peer models, got ${modelRows.length}.`)
 }
 
-const rows = [
-  specRow({
-    id: 'input',
-    label: 'Input price',
-    field: 'input_price',
-    rawValue: LAUNCH_SPEC.input_price,
-    biggerIsBetter: false,
-    format: formatDollars
-  }),
-  specRow({
-    id: 'output',
-    label: 'Output price',
-    field: 'output_price',
-    rawValue: LAUNCH_SPEC.output_price,
-    biggerIsBetter: false,
-    format: formatDollars
-  }),
-  specRow({
-    id: 'cache_read',
-    label: 'Cache-read price',
-    field: 'cache_read_price',
-    rawValue: LAUNCH_SPEC.cache_read_price,
-    biggerIsBetter: false,
-    format: formatDollars
-  }),
-  specRow({
-    id: 'context',
-    label: 'Context window',
-    field: 'context_window',
-    rawValue: LAUNCH_SPEC.context_window,
-    biggerIsBetter: true,
-    format: formatTokens
-  }),
-  specRow({
-    id: 'max_output',
-    label: 'Max output',
-    field: 'max_output',
-    rawValue: LAUNCH_SPEC.max_output,
-    biggerIsBetter: true,
-    format: formatTokens
-  })
+const metrics = [
+  {
+    id: 'inputPrice',
+    title: 'Input $/1M',
+    caption: 'lower is better',
+    format: priceLabel,
+    better: 'lower'
+  },
+  {
+    id: 'outputPrice',
+    title: 'Output $/1M',
+    caption: 'lower is better',
+    format: priceLabel,
+    better: 'lower'
+  },
+  {
+    id: 'cacheReadPrice',
+    title: 'Cache-read $/1M',
+    caption: 'lower is better',
+    format: priceLabel,
+    better: 'lower'
+  },
+  {
+    id: 'contextWindow',
+    title: 'Context window',
+    caption: 'higher is better',
+    format: compactTokens,
+    better: 'higher'
+  },
+  {
+    id: 'maxOutput',
+    title: 'Max output',
+    caption: 'higher is better',
+    format: compactTokens,
+    better: 'higher'
+  }
 ]
 
-for (const row of rows) {
-  if (!isPresent(row.favorability)) {
-    throw new Error(`Invalid favorability percentile for ${row.label}.`)
-  }
+const panelGeometry = [
+  { x: 72, y: 132 },
+  { x: 566, y: 132 },
+  { x: 1060, y: 132 },
+  { x: 72, y: 512 },
+  { x: 566, y: 512 }
+]
+const PANEL_WIDTH = 468
+const PANEL_HEIGHT = 316
+const LABEL_WIDTH = 142
+const BAR_START_OFFSET = 154
+const BAR_WIDTH = 232
+const BAR_HEIGHT = 18
+const ROW_GAP = 31
+const FIRST_ROW_Y = 78
+
+function sortRows(metric) {
+  const direction = metric.better === 'lower' ? 1 : -1
+  return [...modelRows].sort(
+    (a, b) => direction * (a[metric.id] - b[metric.id]) || a.label.localeCompare(b.label)
+  )
 }
 
-const yDomain = ['header', ...rows.map((row) => row.id), 'footer']
-const modelName = `Claude ${shortName(target.slug)}`
-const anthropic = colorFor(target.developer)
-const header = [
+const panels = metrics.map((metric, index) => {
+  const origin = panelGeometry[index]
+  const rows = sortRows(metric)
+  const max = Math.max(...rows.map((row) => row[metric.id]))
+  return { ...metric, ...origin, rows, max }
+})
+
+const frames = panels.map((panel) => ({
+  x1: panel.x,
+  x2: panel.x + PANEL_WIDTH,
+  y1: panel.y,
+  y2: panel.y + PANEL_HEIGHT
+}))
+
+const panelTitles = panels.flatMap((panel) => [
   {
-    id: 'header',
-    x: 0,
-    text: modelName,
+    x: panel.x + 22,
+    y: panel.y + 34,
+    text: panel.title,
     fill: INK,
-    size: 30,
-    weight: 780,
-    anchor: 'start',
-    dx: -8
+    size: 22,
+    weight: 820
   },
   {
-    id: 'header',
-    x: 100,
-    text: `released ${target.release_date}`,
-    fill: MUTED,
-    size: 18,
-    weight: 560,
-    anchor: 'end',
-    dx: 8
+    x: panel.x + 22,
+    y: panel.y + 58,
+    text: panel.caption,
+    fill: panel.better === 'lower' ? MUTED : NEUTRAL,
+    size: 13,
+    weight: 620
   }
-]
-const footer = [
+])
+
+const bars = panels.flatMap((panel) =>
+  panel.rows.map((row, index) => {
+    const y = panel.y + FIRST_ROW_Y + index * ROW_GAP
+    const value = row[panel.id]
+    const width = Math.max(2, value / panel.max * BAR_WIDTH)
+    return {
+      panel: panel.id,
+      label: row.label,
+      valueLabel: panel.format(value),
+      rawValue: value,
+      x1: panel.x + BAR_START_OFFSET,
+      x2: panel.x + BAR_START_OFFSET + width,
+      y1: y - BAR_HEIGHT / 2,
+      y2: y + BAR_HEIGHT / 2,
+      y,
+      labelX: panel.x + LABEL_WIDTH,
+      valueX: Math.min(panel.x + PANEL_WIDTH - 18, panel.x + BAR_START_OFFSET + width + 9),
+      color: row.isHero ? HIGHLIGHT : colorFor(row.developer),
+      textFill: row.isHero ? HIGHLIGHT : INK,
+      valueFill: row.isHero ? HIGHLIGHT : MUTED,
+      opacity: row.isHero ? 1 : 0.76,
+      isHero: row.isHero
+    }
+  })
+)
+
+const gridlines = panels.flatMap((panel) => [
   {
-    id: 'footer',
-    x: 0,
-    text: 'Gauge fill shows favorability percentile: fuller is more favorable for every metric.',
-    fill: FAINT,
-    size: 14,
-    weight: 500,
-    anchor: 'start',
-    dx: -8
+    x1: panel.x + BAR_START_OFFSET,
+    x2: panel.x + BAR_START_OFFSET,
+    y1: panel.y + FIRST_ROW_Y - 20,
+    y2: panel.y + FIRST_ROW_Y + 6 * ROW_GAP + 20
   },
   {
-    id: 'footer',
-    x: 100,
-    text: 'Source: models.dev + model capability catalog',
-    fill: FAINT,
-    size: 14,
-    weight: 500,
-    anchor: 'end',
-    dx: 8
+    x1: panel.x + BAR_START_OFFSET + BAR_WIDTH,
+    x2: panel.x + BAR_START_OFFSET + BAR_WIDTH,
+    y1: panel.y + FIRST_ROW_Y - 20,
+    y2: panel.y + FIRST_ROW_Y + 6 * ROW_GAP + 20
   }
+])
+
+const legendX = 1060
+const legendY = 512
+const legendRows = [
+  { text: 'Direct peer cohort', y: legendY + 36, fill: INK, size: 23, weight: 820 },
+  { text: 'Panel scales are independent.', y: legendY + 76, fill: MUTED, size: 15, weight: 540 },
+  { text: 'Compare bar lengths only within the same metric.', y: legendY + 102, fill: MUTED, size: 15, weight: 540 },
+  { text: 'Best-to-worst: cheapest prices, largest token limits.', y: legendY + 130, fill: MUTED, size: 15, weight: 540 },
+  { text: 'Sonnet 5 standard tier: $2 input · $10 output · $0.20 cache read.', y: legendY + 174, fill: HIGHLIGHT, size: 16, weight: 760 },
+  { text: 'Source: models.dev pricing + model capability catalog.', y: legendY + 224, fill: FAINT, size: 13, weight: 560 }
 ]
 
 const chart = Plot.plot({
   document: newDocument(),
   width: WIDTH,
   height: HEIGHT,
-  marginTop: 124,
-  marginRight: 352,
-  marginBottom: 64,
-  marginLeft: 390,
-  x: {
-    domain: [0, 100],
-    axis: null,
-    label: null
-  },
-  y: {
-    domain: yDomain,
-    axis: null,
-    label: null,
-    padding: 0.52
-  },
+  marginTop: 0,
+  marginRight: 0,
+  marginBottom: 0,
+  marginLeft: 0,
+  x: { domain: [0, WIDTH], axis: null, label: null },
+  y: { domain: [HEIGHT, 0], axis: null, label: null },
   marks: [
-    Plot.frame({ stroke: AXIS, strokeOpacity: 0.9, strokeWidth: 1.2, rx: 26 }),
-    Plot.text(header, {
-      x: 'x',
-      y: 'id',
-      text: 'text',
-      dx: 'dx',
-      fill: 'fill',
-      textAnchor: 'anchor',
-      lineAnchor: 'middle',
-      fontSize: 'size',
-      fontWeight: 'weight'
-    }),
-    Plot.link([{ x1: 0, x2: 100, y1: 'header', y2: 'header' }], {
+    Plot.rect(frames, {
       x1: 'x1',
       x2: 'x2',
       y1: 'y1',
       y2: 'y2',
+      fill: '#ffffff',
+      stroke: AXIS,
+      strokeOpacity: 0.78,
+      strokeWidth: 1.2,
+      rx: 22
+    }),
+    Plot.ruleX(gridlines, {
+      x: 'x1',
+      y1: 'y1',
+      y2: 'y2',
       stroke: GRID,
-      strokeWidth: 1.4,
-      strokeOpacity: 0.95,
-      dy: 34
+      strokeWidth: 1,
+      strokeOpacity: 0.85
     }),
-    Plot.text(rows, {
-      x: 0,
-      y: 'id',
-      text: 'label',
-      dx: -34,
-      dy: -9,
-      fill: INK,
-      textAnchor: 'end',
-      lineAnchor: 'middle',
-      fontSize: 22,
-      fontWeight: 760
-    }),
-    Plot.text(rows, {
-      x: 0,
-      y: 'id',
-      text: 'caption',
-      dx: -34,
-      dy: 19,
-      fill: MUTED,
-      textAnchor: 'end',
-      lineAnchor: 'middle',
-      fontSize: 13,
-      fontWeight: 520
-    }),
-    Plot.link(rows, {
-      x1: 0,
-      x2: 100,
-      y1: 'id',
-      y2: 'id',
+    Plot.ruleX(gridlines, {
+      x: 'x2',
+      y1: 'y1',
+      y2: 'y2',
       stroke: GRID,
-      strokeWidth: 24,
-      strokeLinecap: 'round'
+      strokeWidth: 1,
+      strokeOpacity: 0.5
     }),
-    Plot.link(rows, {
-      x1: 0,
-      x2: 'favorability',
-      y1: 'id',
-      y2: 'id',
-      stroke: HIGHLIGHT,
-      strokeWidth: 24,
-      strokeOpacity: 0.9,
-      strokeLinecap: 'round'
-    }),
-    Plot.dot(rows, {
-      x: 'favorability',
-      y: 'id',
-      r: 12,
-      fill: HIGHLIGHT,
-      stroke: '#ffffff',
-      strokeWidth: 4
-    }),
-    Plot.dot(rows, {
-      x: 'favorability',
-      y: 'id',
-      r: 17,
-      fill: 'none',
-      stroke: anthropic,
-      strokeOpacity: 0.32,
-      strokeWidth: 3
-    }),
-    Plot.text(rows, {
-      x: 'favorability',
-      y: 'id',
-      text: (row) => `${Math.round(row.favorability)}%`,
-      dy: -32,
-      fill: HIGHLIGHT,
-      textAnchor: 'middle',
-      lineAnchor: 'middle',
-      fontSize: 13,
-      fontWeight: 780
-    }),
-    Plot.text(rows, {
-      x: 100,
-      y: 'id',
-      text: 'raw',
-      dx: 38,
-      dy: -9,
-      fill: INK,
-      textAnchor: 'start',
-      lineAnchor: 'middle',
-      fontSize: 21,
-      fontWeight: 760
-    }),
-    Plot.text(rows, {
-      x: 100,
-      y: 'id',
-      text: 'tag',
-      dx: 38,
-      dy: 19,
-      fill: HIGHLIGHT,
-      textAnchor: 'start',
-      lineAnchor: 'middle',
-      fontSize: 14,
-      fontWeight: 780
-    }),
-    Plot.text(footer, {
+    Plot.text(panelTitles, {
       x: 'x',
-      y: 'id',
+      y: 'y',
       text: 'text',
-      dx: 'dx',
       fill: 'fill',
-      textAnchor: 'anchor',
+      textAnchor: 'start',
       lineAnchor: 'middle',
       fontSize: 'size',
       fontWeight: 'weight'
     }),
+    Plot.rect(bars, {
+      x1: 'x1',
+      x2: 'x2',
+      y1: 'y1',
+      y2: 'y2',
+      fill: 'color',
+      fillOpacity: 'opacity',
+      rx: 5
+    }),
+    Plot.text(bars, {
+      x: 'labelX',
+      y: 'y',
+      text: 'label',
+      fill: 'textFill',
+      textAnchor: 'end',
+      lineAnchor: 'middle',
+      fontSize: (row) => (row.isHero ? 14.5 : 13),
+      fontWeight: (row) => (row.isHero ? 860 : 600)
+    }),
+    Plot.text(bars, {
+      x: 'valueX',
+      y: 'y',
+      text: 'valueLabel',
+      fill: 'valueFill',
+      textAnchor: 'start',
+      lineAnchor: 'middle',
+      fontSize: (row) => (row.isHero ? 14 : 12.5),
+      fontWeight: (row) => (row.isHero ? 860 : 620)
+    }),
+    Plot.rect([{ x1: legendX, x2: legendX + PANEL_WIDTH, y1: legendY, y2: legendY + PANEL_HEIGHT }], {
+      x1: 'x1',
+      x2: 'x2',
+      y1: 'y1',
+      y2: 'y2',
+      fill: '#fbfcfe',
+      stroke: GRID,
+      strokeWidth: 1,
+      rx: 22
+    }),
+    Plot.dot([{ x: legendX + 28, y: legendY + 146 }], {
+      x: 'x',
+      y: 'y',
+      r: 8,
+      fill: HIGHLIGHT,
+      stroke: '#ffffff',
+      strokeWidth: 2
+    }),
+    Plot.text(legendRows, {
+      x: legendX + 52,
+      y: 'y',
+      text: 'text',
+      fill: 'fill',
+      textAnchor: 'start',
+      lineAnchor: 'middle',
+      fontSize: 'size',
+      fontWeight: 'weight'
+    })
   ],
   style: {
     ...plotStyle,
@@ -350,8 +357,8 @@ const chart = Plot.plot({
 })
 
 await finalizeToPng(chart, {
-  title: 'Claude Sonnet 5 — the launch-day card',
-  subtitle: 'Where each spec ranks across all current models · released 2026-06-30',
-  yCaption: 'fuller is more favorable: cheaper for price gauges · larger for capability gauges',
+  title: 'Sonnet 5 vs the flagships',
+  subtitle: 'Head-to-head with 6 hand-picked current flagships · standard-tier pricing · n=7',
+  yCaption: 'Five direct spec comparisons; bars are normalized within each panel.',
   out: resolve(OUT_DIR, 'spec_card.png')
 })

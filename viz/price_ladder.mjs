@@ -1,5 +1,5 @@
 import * as Plot from '@observablehq/plot'
-import { queryRows, newDocument, finalizeToPng } from './lib/render.mjs'
+import { newDocument, finalizeToPng } from './lib/render.mjs'
 import {
   WIDTH,
   HEIGHT,
@@ -13,58 +13,8 @@ import {
   MUTED,
   NEUTRAL
 } from './lib/theme.mjs'
+import { resolvePeers, standardPrice } from './lib/peers.mjs'
 
-const SQL = `
-SELECT
-  m.id,
-  m.canonical_slug AS slug,
-  m.developer_id AS developer,
-  m.family,
-  m.release_date,
-  MAX(CASE WHEN pc.component='input_token' THEN pc.normalized_usd_per_1m_tokens END) AS input_1m,
-  MAX(CASE WHEN pc.component='output_token' THEN pc.normalized_usd_per_1m_tokens END) AS output_1m
-FROM price_component pc
-JOIN model m ON m.id=pc.model_id
-WHERE pc.source_id='models_dev'
-  AND m.developer_id IN (
-    'anthropic', 'openai', 'google', 'deepseek', 'xai', 'meta', 'mistral',
-    'alibaba', 'moonshotai', 'cohere', 'zhipuai'
-  )
-GROUP BY m.id
-HAVING input_1m IS NOT NULL AND output_1m IS NOT NULL
-`
-
-const NOTABLE_SLUGS = [
-  'openai/o3-pro',
-  'anthropic/claude-opus-4-8',
-  'openai/gpt-5.5',
-  'zhipuai/glm-5.1',
-  'google/gemini-3-pro-preview',
-  'anthropic/claude-sonnet-4-6',
-  'openai/gpt-5.2',
-  'alibaba/qwen3.7-max',
-  'google/gemini-2.5-pro',
-  'cohere/command-r-plus-08-2024',
-  'mistral/mistral-large-latest',
-  'anthropic/claude-sonnet-5',
-  'openai/gpt-5',
-  'moonshotai/kimi-k2-turbo-preview',
-  'cohere/command-a-plus-05-2026',
-  'alibaba/qwen3-max',
-  'mistral/mistral-medium-2604',
-  'zhipuai/glm-5.2',
-  'anthropic/claude-haiku-4-5',
-  'deepseek/deepseek-v4-pro',
-  'xai/grok-4.3',
-  'deepseek/deepseek-reasoner'
-]
-
-function canonicalPrice(row) {
-  if (row.id === 75) {
-    return { ...row, input_1m: 2, output_1m: 10 }
-  }
-  return row
-}
 
 function priceLabel(value) {
   const rounded = Math.round(value)
@@ -74,30 +24,34 @@ function priceLabel(value) {
   return `$${value.toFixed(value < 10 ? 1 : 1).replace(/\.0$/, '')}`
 }
 
-const bySlug = new Map(queryRows(SQL).map((row) => [row.slug, canonicalPrice(row)]))
-const missing = NOTABLE_SLUGS.filter((slug) => !bySlug.has(slug))
-if (missing.length > 0) {
-  throw new Error(`Missing curated price rows: ${missing.join(', ')}`)
-}
-
-const rows = NOTABLE_SLUGS.map((slug) => bySlug.get(slug))
-  .sort((a, b) => b.output_1m - a.output_1m || b.input_1m - a.input_1m)
-  .map((row, index) => {
-    const isSonnet = row.id === 75
+const rows = resolvePeers()
+  .map((peer) => {
+    const input_1m = standardPrice(peer.id, 'input_token')
+    const output_1m = standardPrice(peer.id, 'output_token')
+    if (input_1m === null || output_1m === null) {
+      throw new Error(`Missing standard-tier input/output price for ${peer.canonical_slug}`)
+    }
     return {
-      ...row,
-      rank: index + 1,
-      display: shortName(row.slug),
-      label: `${String(index + 1).padStart(2, '0')} ${shortName(row.slug)}`,
-      value: priceLabel(row.output_1m),
-      inputLabel: priceLabel(row.input_1m),
-      color: isSonnet ? HIGHLIGHT : colorFor(row.developer),
-      isSonnet
+      ...peer,
+      slug: peer.canonical_slug,
+      developer: peer.developer_id,
+      input_1m,
+      output_1m,
+      display: shortName(peer.canonical_slug),
+      value: priceLabel(output_1m),
+      inputLabel: priceLabel(input_1m),
+      color: peer.isHero ? HIGHLIGHT : colorFor(peer.developer_id),
+      isSonnet: peer.isHero
     }
   })
+  .sort((a, b) => b.output_1m - a.output_1m || b.input_1m - a.input_1m)
+  .map((row) => ({
+    ...row,
+    label: row.display
+  }))
 
-if (rows.length < 20 || rows.length > 24) {
-  throw new Error(`Expected 20-24 curated rows, got ${rows.length}`)
+if (rows.length !== 7) {
+  throw new Error(`Expected 7 peer rows, got ${rows.length}`)
 }
 
 const sonnet = rows.find((row) => row.isSonnet)
@@ -105,17 +59,17 @@ if (!sonnet || sonnet.input_1m !== 2 || sonnet.output_1m !== 10) {
   throw new Error('Sonnet 5 launch pricing not present as $2 in / $10 out.')
 }
 
-const xMax = Math.ceil((Math.max(...rows.map((row) => row.output_1m)) + 8) / 10) * 10
+const xMax = Math.ceil((Math.max(...rows.map((row) => row.output_1m)) + 6) / 10) * 10
 const yDomain = rows.map((row) => row.label)
 
 const chart = Plot.plot({
   document: newDocument(),
   width: WIDTH,
   height: HEIGHT,
-  marginTop: 104,
-  marginRight: 190,
-  marginBottom: 58,
-  marginLeft: 268,
+  marginTop: 114,
+  marginRight: 310,
+  marginBottom: 72,
+  marginLeft: 300,
   x: {
     domain: [0, xMax],
     grid: true,
@@ -137,17 +91,19 @@ const chart = Plot.plot({
       x: 'output_1m',
       y: 'label',
       fill: (row) => row.color,
-      fillOpacity: (row) => (row.isSonnet ? 1 : 0.72),
-      rx: 4
+      fillOpacity: (row) => (row.isSonnet ? 1 : 0.76),
+      insetTop: 17,
+      insetBottom: 17,
+      rx: 7
     }),
     Plot.dot(rows, {
       x: 'input_1m',
       y: 'label',
-      r: (row) => (row.isSonnet ? 5.5 : 4),
+      r: (row) => (row.isSonnet ? 7 : 5.5),
       fill: '#ffffff',
       stroke: (row) => row.color,
-      strokeWidth: (row) => (row.isSonnet ? 2.3 : 1.4),
-      opacity: (row) => (row.isSonnet ? 1 : 0.68)
+      strokeWidth: (row) => (row.isSonnet ? 3 : 1.8),
+      opacity: (row) => (row.isSonnet ? 1 : 0.5)
     }),
     Plot.text(rows, {
       x: 0,
@@ -157,51 +113,51 @@ const chart = Plot.plot({
       textAnchor: 'end',
       lineAnchor: 'middle',
       fill: (row) => (row.isSonnet ? HIGHLIGHT : INK),
-      fontSize: (row) => (row.isSonnet ? 17 : 13),
-      fontWeight: (row) => (row.isSonnet ? 850 : 560)
+      fontSize: (row) => (row.isSonnet ? 24 : 21),
+      fontWeight: (row) => (row.isSonnet ? 900 : 650)
     }),
     Plot.text(rows, {
       x: 'output_1m',
       y: 'label',
       text: 'value',
-      dx: 9,
+      dx: 12,
       textAnchor: 'start',
       lineAnchor: 'middle',
       fill: (row) => (row.isSonnet ? HIGHLIGHT : MUTED),
-      fontSize: (row) => (row.isSonnet ? 15 : 12),
-      fontWeight: (row) => (row.isSonnet ? 850 : 620)
+      fontSize: (row) => (row.isSonnet ? 21 : 18),
+      fontWeight: (row) => (row.isSonnet ? 900 : 700)
     }),
     Plot.link([sonnet], {
-      x1: 'output_1m',
+      x1: 'input_1m',
       y1: 'label',
-      x2: 31,
+      x2: 'output_1m',
       y2: 'label',
       stroke: HIGHLIGHT,
-      strokeOpacity: 0.45,
-      strokeWidth: 1.5,
-      strokeDasharray: '4 4'
+      strokeOpacity: 0.4,
+      strokeWidth: 1.6,
+      strokeDasharray: '4 5'
     }),
     Plot.text([sonnet], {
-      x: 33,
+      x: 'output_1m',
       y: 'label',
-      text: () => '$10/1M output · $2 input',
-      dx: 0,
+      text: () => '$2 in / $10 out',
+      dx: 82,
       textAnchor: 'start',
       lineAnchor: 'middle',
       fill: HIGHLIGHT,
-      fontSize: 14,
-      fontWeight: 800
+      fontSize: 20,
+      fontWeight: 900
     }),
     Plot.text([{ x: 1.6, y: rows.at(-1).label }], {
       x: 'x',
       y: 'y',
-      text: () => 'white dot = input price',
+      text: () => 'open dot = input price',
       dx: 8,
-      dy: 24,
+      dy: 34,
       textAnchor: 'start',
       fill: NEUTRAL,
-      fontSize: 12,
-      fontWeight: 560
+      fontSize: 15,
+      fontWeight: 600
     })
   ],
   style: {
@@ -213,7 +169,7 @@ const chart = Plot.plot({
 
 await finalizeToPng(chart, {
   title: 'Where Sonnet 5 prices in',
-  subtitle: 'Output price per 1M tokens across the frontier · Sonnet 5: $2 in / $10 out per 1M',
-  yCaption: 'models.dev pricing',
+  subtitle: 'Output price per 1M tokens · 6 current flagships · standard tier · Sonnet 5: $2 in / $10 out',
+  yCaption: 'models.dev standard-tier pricing · n=7',
   out: 'viz/out/price_ladder.png'
 })

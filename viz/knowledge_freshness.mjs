@@ -1,6 +1,7 @@
 import * as Plot from '@observablehq/plot'
 import { resolve } from 'node:path'
-import { queryRows, newDocument, finalizeToPng, OUT_DIR } from './lib/render.mjs'
+import { newDocument, finalizeToPng, OUT_DIR } from './lib/render.mjs'
+import { resolvePeers, HERO_SLUG } from './lib/peers.mjs'
 import {
   WIDTH,
   HEIGHT,
@@ -15,51 +16,25 @@ import {
   INK
 } from './lib/theme.mjs'
 
-const SONNET_5 = 'anthropic/claude-sonnet-5'
-const MAJOR_DEVELOPERS = new Set([
-  'anthropic',
-  'openai',
-  'google',
-  'xai',
-  'deepseek',
-  'meta',
-  'mistral',
-  'cohere',
-  'alibaba',
-  'moonshotai',
-  'zhipuai'
-])
-const EXCLUDED_VARIANTS = /(?:highspeed|customtools|spark|labs-|latest)/i
+function parseDate(value) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
 
-const SQL = `
-SELECT
-  m.canonical_slug AS slug,
-  m.developer_id AS developer,
-  m.knowledge_cutoff AS knowledge_cutoff,
-  m.release_date AS release_date
-FROM model m
-WHERE m.knowledge_cutoff IS NOT NULL
-  AND m.release_date IS NOT NULL
-  AND m.release_date >= '2025-06-01'
-ORDER BY m.release_date DESC, m.canonical_slug
-`
-
-function parseDate(value, { endOfMonth = false } = {}) {
   const text = String(value).trim()
-  const match = text.match(/^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/)
-  if (!match) {
-    return new Date(text)
+  const match = text.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/)
+  if (match) {
+    const year = Number(match[1])
+    const month = Number(match[2]) - 1
+    const day = match[3] ? Number(match[3]) : 1
+    return new Date(Date.UTC(year, month, day))
   }
 
-  const year = Number(match[1])
-  const month = match[2] ? Number(match[2]) - 1 : endOfMonth ? 11 : 0
-  if (match[3]) {
-    return new Date(Date.UTC(year, month, Number(match[3])))
+  const date = new Date(text)
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid date value: ${text}`)
   }
-  if (endOfMonth) {
-    return new Date(Date.UTC(year, month + 1, 0))
-  }
-  return new Date(Date.UTC(year, month, 1))
+  return date
 }
 
 function formatMonth(date) {
@@ -70,16 +45,38 @@ function formatMonth(date) {
   })
 }
 
-function formatGap(months) {
-  return months < 1 ? `${Math.round(months * 30)}d` : `${months.toFixed(1)} mo`
+function formatRelease(date) {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC'
+  })
 }
 
-function toPoint(row) {
-  const cutoff = parseDate(row.knowledge_cutoff, { endOfMonth: true })
+function formatGap(months) {
+  return `${months.toFixed(1)} mo`
+}
+
+function toTimelineRow(row) {
+  const cutoff = parseDate(row.knowledge_cutoff)
   const release = parseDate(row.release_date)
+  if (!cutoff) {
+    return null
+  }
+  if (!release) {
+    throw new Error(`Missing release date for ${row.canonical_slug}`)
+  }
+
   const gapDays = (release - cutoff) / MS_PER_DAY
   const gapMonths = gapDays / 30.44
-  const isSonnet = row.slug === SONNET_5
+  if (!Number.isFinite(gapMonths) || gapDays < 0) {
+    throw new Error(`Invalid cutoff/release interval for ${row.canonical_slug}`)
+  }
+
+  const isHero = row.canonical_slug === HERO_SLUG
+  const name = isHero ? 'Sonnet 5' : shortName(row.canonical_slug)
+  const gapLabel = formatGap(gapMonths)
 
   return {
     ...row,
@@ -87,44 +84,48 @@ function toPoint(row) {
     release,
     gapDays,
     gapMonths,
-    isSonnet,
-    label: isSonnet ? 'Sonnet 5' : shortName(row.slug),
-    gapLabel: formatGap(gapMonths),
-    color: isSonnet ? HIGHLIGHT : colorFor(row.developer)
+    isHero,
+    name,
+    rowLabel: `${name} · ${gapLabel}`,
+    gapLabel,
+    color: isHero ? HIGHLIGHT : colorFor(row.developer_id)
   }
 }
 
-const rows = queryRows(SQL)
-  .filter((row) => MAJOR_DEVELOPERS.has(String(row.developer).toLowerCase()))
-  .filter((row) => row.slug === SONNET_5 || !EXCLUDED_VARIANTS.test(row.slug))
-  .map(toPoint)
-  .filter((row) => Number.isFinite(row.gapMonths) && row.gapDays >= 0)
-  .sort((a, b) => b.release - a.release || a.gapMonths - b.gapMonths || a.label.localeCompare(b.label))
+const peers = resolvePeers()
+const omitted = peers.filter((row) => !row.knowledge_cutoff)
+const orderedRows = peers
+  .map(toTimelineRow)
+  .filter(Boolean)
+  .sort((a, b) => b.release - a.release || a.gapMonths - b.gapMonths || a.name.localeCompare(b.name))
 
-const sonnet = rows.find((row) => row.isSonnet)
+const sonnet = orderedRows.find((row) => row.isHero)
 if (!sonnet) {
-  throw new Error('Sonnet 5 knowledge freshness row missing from model table.')
+  throw new Error('Sonnet 5 knowledge freshness row missing from disclosed-cutoff peer cohort.')
 }
 
-const chartRows = rows.slice(0, 28)
-if (!chartRows.some((row) => row.isSonnet)) {
-  chartRows.unshift(sonnet)
-}
-if (chartRows.length < 20) {
-  throw new Error(`Expected at least 20 recent knowledge-cutoff rows; got ${chartRows.length}.`)
+if (orderedRows.length === 0) {
+  throw new Error('No curated peer rows disclose a knowledge cutoff.')
 }
 
-const orderedRows = chartRows.sort(
-  (a, b) => b.release - a.release || a.gapMonths - b.gapMonths || a.label.localeCompare(b.label)
-)
-const yDomain = orderedRows.map((row) => row.label)
-const minCutoff = new Date(Math.min(...orderedRows.map((row) => row.cutoff.getTime())) - 18 * MS_PER_DAY)
-const maxRelease = new Date(Math.max(...orderedRows.map((row) => row.release.getTime())) + 120 * MS_PER_DAY)
+const yDomain = orderedRows.map((row) => row.rowLabel)
+const minCutoff = new Date(Math.min(...orderedRows.map((row) => row.cutoff.getTime())) - 35 * MS_PER_DAY)
+const maxRelease = new Date(Math.max(...orderedRows.map((row) => row.release.getTime())) + 95 * MS_PER_DAY)
+const labelX = new Date(minCutoff.getTime() + 2 * MS_PER_DAY)
+const noteText =
+  omitted.length > 0
+    ? `cutoff not disclosed for ${omitted.map((row) => shortName(row.canonical_slug)).join(', ')}`
+    : null
+const subtitle =
+  `Months from training cutoff to release · current flagships · Sonnet 5: Jan 2026 -> Jun 30 2026` +
+  ` · ${Math.round(sonnet.gapMonths)} mo is typical${ 
+  noteText ? ` · ${noteText}` : ''}`
+
 const callouts = [
   {
     x: sonnet.release,
-    y: sonnet.label,
-    text: `Sonnet 5: ${formatGap(sonnet.gapMonths)} gap · ${formatMonth(sonnet.cutoff)} → Jun 30, 2026`,
+    y: sonnet.rowLabel,
+    text: `Sonnet 5: ~${Math.round(sonnet.gapMonths)} mo · ${formatMonth(sonnet.cutoff)} -> ${formatRelease(sonnet.release)}`,
     color: HIGHLIGHT
   }
 ]
@@ -136,7 +137,7 @@ const chart = Plot.plot({
   marginTop: 132,
   marginRight: 280,
   marginBottom: 88,
-  marginLeft: 220,
+  marginLeft: 330,
   x: {
     domain: [minCutoff, maxRelease],
     grid: true,
@@ -146,82 +147,105 @@ const chart = Plot.plot({
   },
   y: {
     domain: yDomain,
-    tickSize: 0,
-    tickPadding: 8,
+    axis: null,
     label: null
   },
   marks: [
-    Plot.ruleY(yDomain, { stroke: GRID, strokeWidth: 0.7, strokeOpacity: 0.56 }),
+    Plot.ruleY(yDomain, { stroke: GRID, strokeWidth: 0.8, strokeOpacity: 0.6 }),
     Plot.ruleX([sonnet.release], {
       stroke: HIGHLIGHT,
-      strokeWidth: 1.3,
+      strokeWidth: 1.4,
       strokeOpacity: 0.36,
       strokeDasharray: '4 5'
     }),
     Plot.link(
-      orderedRows.filter((row) => !row.isSonnet),
+      orderedRows.filter((row) => !row.isHero),
       {
         x1: 'cutoff',
         x2: 'release',
-        y1: 'label',
-        y2: 'label',
+        y1: 'rowLabel',
+        y2: 'rowLabel',
         stroke: (row) => row.color,
-        strokeWidth: 5,
-        strokeOpacity: 0.48,
+        strokeWidth: 8,
+        strokeOpacity: 0.54,
         strokeLinecap: 'round'
       }
     ),
     Plot.link(
-      orderedRows.filter((row) => row.isSonnet),
+      orderedRows.filter((row) => row.isHero),
       {
         x1: 'cutoff',
         x2: 'release',
-        y1: 'label',
-        y2: 'label',
+        y1: 'rowLabel',
+        y2: 'rowLabel',
         stroke: HIGHLIGHT,
-        strokeWidth: 11,
-        strokeOpacity: 0.96,
+        strokeWidth: 13,
+        strokeOpacity: 0.98,
         strokeLinecap: 'round'
       }
     ),
     Plot.dot(orderedRows, {
       x: 'cutoff',
-      y: 'label',
-      r: (row) => (row.isSonnet ? 5 : 3.4),
+      y: 'rowLabel',
+      r: (row) => (row.isHero ? 6.2 : 4.4),
       fill: '#ffffff',
       stroke: (row) => row.color,
-      strokeWidth: (row) => (row.isSonnet ? 2.4 : 1.2)
+      strokeWidth: (row) => (row.isHero ? 3 : 1.8)
     }),
     Plot.dot(orderedRows, {
       x: 'release',
-      y: 'label',
-      r: (row) => (row.isSonnet ? 8 : 4.8),
+      y: 'rowLabel',
+      r: (row) => (row.isHero ? 9 : 6),
       fill: (row) => row.color,
-      fillOpacity: (row) => (row.isSonnet ? 1 : 0.88),
+      fillOpacity: (row) => (row.isHero ? 1 : 0.9),
       stroke: '#ffffff',
-      strokeWidth: (row) => (row.isSonnet ? 2.4 : 1.2)
+      strokeWidth: (row) => (row.isHero ? 2.8 : 1.4)
+    }),
+    Plot.text(orderedRows, {
+      x: labelX,
+      y: 'rowLabel',
+      text: 'rowLabel',
+      dx: -14,
+      textAnchor: 'end',
+      lineAnchor: 'middle',
+      fill: (row) => (row.isHero ? HIGHLIGHT : INK),
+      fontSize: (row) => (row.isHero ? 22 : 18),
+      fontWeight: (row) => (row.isHero ? 850 : 650)
+    }),
+    Plot.text(orderedRows, {
+      x: 'cutoff',
+      y: 'rowLabel',
+      text: (row) => formatMonth(row.cutoff),
+      dx: -12,
+      dy: -18,
+      textAnchor: 'end',
+      lineAnchor: 'middle',
+      fill: (row) => (row.isHero ? HIGHLIGHT : MUTED),
+      fontSize: (row) => (row.isHero ? 13 : 11.5),
+      fontWeight: (row) => (row.isHero ? 800 : 600)
     }),
     Plot.text(orderedRows, {
       x: 'release',
-      y: 'label',
-      text: 'gapLabel',
-      dx: 10,
+      y: 'rowLabel',
+      text: (row) => formatRelease(row.release),
+      dx: 12,
+      dy: 18,
       textAnchor: 'start',
       lineAnchor: 'middle',
-      fill: (row) => (row.isSonnet ? HIGHLIGHT : MUTED),
-      fontSize: (row) => (row.isSonnet ? 13 : 11.5),
-      fontWeight: (row) => (row.isSonnet ? 800 : 600)
+      fill: (row) => (row.isHero ? HIGHLIGHT : MUTED),
+      fontSize: (row) => (row.isHero ? 13 : 11.5),
+      fontWeight: (row) => (row.isHero ? 800 : 600)
     }),
     Plot.text(callouts, {
       x: 'x',
       y: 'y',
       text: 'text',
-      dx: 20,
-      dy: -22,
-      textAnchor: 'start',
+      dx: -8,
+      dy: -34,
+      textAnchor: 'end',
       lineAnchor: 'middle',
       fill: 'color',
-      fontSize: 18,
+      fontSize: 20,
       fontWeight: 850
     })
   ],
@@ -231,13 +255,13 @@ const chart = Plot.plot({
     '--plot-grid': GRID,
     '--plot-axis': AXIS,
     color: INK,
-    fontSize: 13
+    fontSize: 14
   }
 })
 
 await finalizeToPng(chart, {
   title: 'How fresh is its knowledge?',
-  subtitle: `Months from training cutoff to release · Sonnet 5’s ${formatGap(sonnet.gapMonths)} gap is middle-of-the-pack`,
-  yCaption: 'Recent frontier models, sorted by release date',
+  subtitle,
+  yCaption: 'Curated current-flagship cohort, sorted by release date',
   out: resolve(OUT_DIR, 'knowledge_freshness.png')
 })
