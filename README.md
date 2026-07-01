@@ -52,7 +52,7 @@ rendered chart gallery.
 | Source registry | `db/seed_sources.sql` ranks and describes the source catalog. |
 | Ingest | `ingest/` parsers for models.dev, OpenRouter, Epoch, LMArena, and more. |
 | Pipeline | `store/pipeline.py` runs ingest → spine → bridge → promote facts. |
-| Visualization | `viz/` shared lib + 9 charts (frontier, elo_over_time, model_landing, and 6 Sonnet 5 launch visuals); 7-tool bake-off in `viz/bakeoff/`. |
+| Visualization | `viz/` shared lib + 8 charts (frontier, elo_over_time, model_landing, plus 5 Sonnet 5 launch visuals: spec_card, price_ladder, cache_economics, knowledge_freshness, lineage_elo, all comparing a curated peer cohort via `viz/lib/peers.mjs`); 7-tool bake-off in `viz/bakeoff/`. |
 | Skill | `.claude/skills/new-model-drop/` research + viz workflow. |
 | Docs | `docs/PLAN.md`, `docs/SCHEMA.md`, `docs/SOURCES.md`, `docs/REPO.md`. |
 
@@ -60,10 +60,10 @@ rendered chart gallery.
 
 Read the plan first:
 
-- [`docs/PLAN.md`](docs/PLAN.md) — architecture, locked design decisions, milestones.
-- [`docs/SCHEMA.md`](docs/SCHEMA.md) — every table, invariant, and example SQL query.
-- [`docs/SOURCES.md`](docs/SOURCES.md) — ranked source catalog and access notes.
-- [`docs/REPO.md`](docs/REPO.md) — repo layout and intended layer commands.
+- [`docs/PLAN.md`](docs/PLAN.md): architecture, locked design decisions, milestones.
+- [`docs/SCHEMA.md`](docs/SCHEMA.md): every table, invariant, and example SQL query.
+- [`docs/SOURCES.md`](docs/SOURCES.md): ranked source catalog and access notes.
+- [`docs/REPO.md`](docs/REPO.md): repo layout and intended layer commands.
 
 ## Core invariants
 
