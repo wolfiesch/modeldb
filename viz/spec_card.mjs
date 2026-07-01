@@ -93,8 +93,8 @@ const modelRows = peers.map((peer) => {
   }
 })
 
-if (modelRows.length !== 7) {
-  throw new Error(`Expected 7 peer models, got ${modelRows.length}.`)
+if (modelRows.length !== peers.length) {
+  throw new Error(`Expected ${peers.length} peer models, got ${modelRows.length}.`)
 }
 
 const metrics = [
@@ -217,18 +217,19 @@ const bars = panels.flatMap((panel) =>
   })
 )
 
+const LAST_ROW_OFFSET = (modelRows.length - 1) * ROW_GAP
 const gridlines = panels.flatMap((panel) => [
   {
     x1: panel.x + BAR_START_OFFSET,
     x2: panel.x + BAR_START_OFFSET,
     y1: panel.y + FIRST_ROW_Y - 20,
-    y2: panel.y + FIRST_ROW_Y + 6 * ROW_GAP + 20
+    y2: panel.y + FIRST_ROW_Y + LAST_ROW_OFFSET + 20
   },
   {
     x1: panel.x + BAR_START_OFFSET + BAR_WIDTH,
     x2: panel.x + BAR_START_OFFSET + BAR_WIDTH,
     y1: panel.y + FIRST_ROW_Y - 20,
-    y2: panel.y + FIRST_ROW_Y + 6 * ROW_GAP + 20
+    y2: panel.y + FIRST_ROW_Y + LAST_ROW_OFFSET + 20
   }
 ])
 
@@ -358,7 +359,7 @@ const chart = Plot.plot({
 
 await finalizeToPng(chart, {
   title: 'Sonnet 5 vs the flagships',
-  subtitle: 'Head-to-head with 6 hand-picked current flagships · standard-tier pricing · n=7',
+  subtitle: 'Head-to-head with 7 hand-picked current flagships · standard-tier pricing · n=8',
   yCaption: 'Five direct spec comparisons; bars are normalized within each panel.',
   out: resolve(OUT_DIR, 'spec_card.png')
 })

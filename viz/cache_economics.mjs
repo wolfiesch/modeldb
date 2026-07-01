@@ -14,7 +14,7 @@ import {
   MUTED,
   FAINT
 } from './lib/theme.mjs'
-import { resolvePeers, standardPrice } from './lib/peers.mjs'
+import { PEER_SLUGS, resolvePeers, standardPrice } from './lib/peers.mjs'
 
 const CACHE_HIT_RATE = 0.9
 const FRESH_RATE = 1 - CACHE_HIT_RATE
@@ -65,8 +65,8 @@ const rows = resolvePeers()
   })
   .sort((a, b) => a.effective - b.effective || a.input_1m - b.input_1m)
 
-if (rows.length !== 7) {
-  throw new Error(`Expected 7 curated peer cache-price rows; found ${rows.length}.`)
+if (rows.length !== PEER_SLUGS.length) {
+  throw new Error(`Expected ${PEER_SLUGS.length} curated peer cache-price rows; found ${rows.length}.`)
 }
 if (!rows.some((row) => row.isHero)) {
   throw new Error('Sonnet 5 missing from cache economics chart.')
@@ -212,7 +212,7 @@ const chart = Plot.plot({
 
 await finalizeToPng(chart, {
   title: 'The prompt-caching discount',
-  subtitle: 'Sticker vs effective input at 90% cache hit · 6 flagships · standard tier · n=7',
+  subtitle: 'Sticker vs effective input at 90% cache hit · 7 flagships · standard tier · n=8',
   yCaption: 'models.dev standard-tier pricing',
   out: resolve(OUT_DIR, 'cache_economics.png')
 })

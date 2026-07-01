@@ -21,6 +21,7 @@ export const PEER_SLUGS = [
   'openai/gpt-5.5',
   'google/gemini-3.5-flash',
   'anthropic/claude-fable-5',
+  'anthropic/claude-opus-4-8',
   'moonshotai/kimi-k2.7-code',
   'zhipuai/glm-5.2',
   'deepseek/deepseek-v4-pro'

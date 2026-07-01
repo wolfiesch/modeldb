@@ -13,7 +13,7 @@ import {
   MUTED,
   NEUTRAL
 } from './lib/theme.mjs'
-import { resolvePeers, standardPrice } from './lib/peers.mjs'
+import { PEER_SLUGS, resolvePeers, standardPrice } from './lib/peers.mjs'
 
 
 function priceLabel(value) {
@@ -50,8 +50,8 @@ const rows = resolvePeers()
     label: row.display
   }))
 
-if (rows.length !== 7) {
-  throw new Error(`Expected 7 peer rows, got ${rows.length}`)
+if (rows.length !== PEER_SLUGS.length) {
+  throw new Error(`Expected ${PEER_SLUGS.length} peer rows, got ${rows.length}`)
 }
 
 const sonnet = rows.find((row) => row.isSonnet)
@@ -169,7 +169,7 @@ const chart = Plot.plot({
 
 await finalizeToPng(chart, {
   title: 'Where Sonnet 5 prices in',
-  subtitle: 'Output price per 1M tokens · 6 current flagships · standard tier · Sonnet 5: $2 in / $10 out',
-  yCaption: 'models.dev standard-tier pricing · n=7',
+  subtitle: 'Output price per 1M tokens · 7 current flagships · standard tier · Sonnet 5: $2 in / $10 out',
+  yCaption: 'models.dev standard-tier pricing · n=8',
   out: 'viz/out/price_ladder.png'
 })
