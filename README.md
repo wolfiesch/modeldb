@@ -23,13 +23,13 @@ and re-render the charts from a fresh clone:
 
 ```bash
 # 1. Python deps (ingest + resolve + store pipeline)
-pip install -r requirements.txt
+uv pip install -r requirements.txt    # or: python3 -m pip install -r requirements.txt
 
 # 2. Create the SQLite database from schema + source seed
-python db/init.py
+python3 db/init.py
 
 # 3. Populate it: fetch live sources -> resolve identity -> promote facts
-python -m store.pipeline            # add --no-fetch to reuse existing raw snapshots
+python3 -m store.pipeline           # add --no-fetch to reuse existing raw snapshots
 
 # 4. JS deps + render the charts (writes viz/out/*.png)
 bun install
