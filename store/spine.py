@@ -1,0 +1,300 @@
+"""Spine-builder: promote models.dev first-party records into canonical `model`
+rows + aliases, and expose the cross-source join helper `link_model()`.
+
+Design notes (from live-payload recon):
+  - models.dev top-level keys mix FIRST-PARTY vendors (anthropic, openai, xai, ...)
+    with AGGREGATOR re-exporters (requesty, qiniu-ai, openrouter, ...). Only
+    first-party providers are authoritative for canonical identity; aggregators
+    would create duplicate `vendor/model` canonical rows. We build the spine from
+    first-party providers, and let every other source attach as aliases/facts.
+  - Each canonical model gets TWO normalized aliases: the full `provider/model`
+    form AND the bare `model` form, so provider-less benchmark names (Epoch's
+    `gpt-5.5`, `grok-4`) can still join.
+  - link_model() is a multi-pass matcher used by the price + benchmark promoters.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+from typing import Any
+
+from ingest.base import utcnow
+from resolve.normalize import canonical_org, extract_modifiers, normalize_alias
+
+# First-party model DEVELOPERS on models.dev — the only providers authoritative
+# for canonical identity. Every other provider id (nano-gpt, openrouter, vercel,
+# snowflake-cortex, wafer.ai, ...) re-exports these vendors' models and must NOT
+# mint a canonical row; they attach as aliases/facts instead.
+FIRST_PARTY_PROVIDERS = {
+    "anthropic", "openai", "google", "xai", "meta", "llama", "mistral",
+    "deepseek", "alibaba", "zhipuai", "zai", "moonshotai", "minimax",
+    "cohere", "perplexity", "stepfun", "upstage", "xiaomi", "nvidia",
+    "sarvam", "baidu", "tencent", "inceptron", "poolside", "sakana", "nova",
+}
+
+
+def _norm_variants(source_model_id: str) -> list[str]:
+    """Normalized alias forms for a `provider/model` id: full + bare model."""
+    variants = [normalize_alias(source_model_id)]
+    if "/" in source_model_id:
+        variants.append(normalize_alias(source_model_id.split("/", 1)[1]))
+    # de-dupe, preserve order
+    seen: dict[str, None] = {}
+    for v in variants:
+        if v:
+            seen.setdefault(v, None)
+    return list(seen)
+
+
+def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
+    """Create canonical `model` rows + aliases from models.dev first-party records.
+
+    Idempotent on canonical_slug and (source_id, alias_string). Returns a summary.
+    """
+    now = utcnow()
+    rows = conn.execute(
+        """
+        SELECT smr.source_model_id, smr.display_name, smr.parsed_fields_json
+        FROM source_model_record smr
+        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+        WHERE ss.source_id = 'models_dev'
+        """
+    ).fetchall()
+
+    models_created = 0
+    aliases_created = 0
+    for source_model_id, display_name, parsed_json in rows:
+        provider_id = source_model_id.split("/", 1)[0]
+        if provider_id not in FIRST_PARTY_PROVIDERS:
+            continue
+        pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
+
+        canonical_slug = source_model_id  # already provider/model; authoritative
+        developer_id = canonical_org(provider_id)
+        release_date = pf.get("release_date")
+        snapshot_date = release_date  # models.dev release_date is the dated snapshot
+
+        cur = conn.execute("SELECT id FROM model WHERE canonical_slug = ?", (canonical_slug,))
+        existing = cur.fetchone()
+        if existing:
+            model_id = existing[0]
+        else:
+            _ensure_org(conn, developer_id, provider_id)
+            cur = conn.execute(
+                """
+                INSERT INTO model (canonical_slug, developer_id, family, tier_or_variant,
+                                   release_date, snapshot_date, knowledge_cutoff,
+                                   open_weights, canonical_confidence, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (canonical_slug, developer_id, pf.get("family"), pf.get("model_id"),
+                 release_date, snapshot_date, pf.get("knowledge"),
+                 1 if pf.get("open_weights") else 0 if pf.get("open_weights") is not None else None,
+                 "verified", now, now),
+            )
+            model_id = cur.lastrowid
+            models_created += 1
+
+        # Distinct alias rows so both forms persist under the unique index:
+        #   full `provider/model` (api_model_id) AND bare `model` (bare_name).
+        # link_model matches on alias_normalized regardless of kind.
+        alias_specs = [(source_model_id, "api_model_id")]
+        if "/" in source_model_id:
+            bare = source_model_id.split("/", 1)[1]
+            alias_specs.append((bare, "bare_name"))
+        for alias_str, kind in alias_specs:
+            aliases_created += _write_alias(
+                conn, source_id="models_dev", alias_string=alias_str,
+                alias_normalized=normalize_alias(alias_str), alias_kind=kind,
+                model_id=model_id, method="exact_provider_doc", confidence=1.0, now=now,
+            )
+    conn.commit()
+    return {"models_created": models_created, "aliases_created": aliases_created}
+
+
+def bridge_openrouter_aliases(conn: sqlite3.Connection) -> dict[str, int]:
+    """Attach OpenRouter ids + hugging_face_ids as aliases onto spine models.
+
+    Matches OpenRouter `id` (provider/model) to canonical models by normalized
+    form; when matched, also records the hugging_face_id as an hf_repo_id alias so
+    the resolver's HF bridge can later link open-weight artifacts.
+    """
+    now = utcnow()
+    rows = conn.execute(
+        """
+        SELECT smr.source_model_id, smr.parsed_fields_json
+        FROM source_model_record smr
+        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+        WHERE ss.source_id = 'openrouter'
+        """
+    ).fetchall()
+    linked = 0
+    hf = 0
+    for source_model_id, parsed_json in rows:
+        pf = json.loads(parsed_json) if parsed_json else {}
+        model_id = link_model(conn, source_id="openrouter",
+                              source_model_id=source_model_id, parsed_fields=pf)
+        if model_id is None:
+            continue
+        linked += _write_alias(
+            conn, source_id="openrouter", alias_string=source_model_id,
+            alias_normalized=normalize_alias(source_model_id), alias_kind="router_id",
+            model_id=model_id, method="normalized_match", confidence=0.9, now=now,
+        )
+        hf_id = pf.get("hugging_face_id")
+        if hf_id:
+            hf += _write_alias(
+                conn, source_id="openrouter", alias_string=hf_id,
+                alias_normalized=normalize_alias(hf_id), alias_kind="hf_repo_id",
+                model_id=model_id, method="hf_id_bridge", confidence=0.95, now=now,
+            )
+    conn.commit()
+    return {"openrouter_linked": linked, "hf_aliases": hf}
+
+
+def _suffix_reductions(identity: str) -> list[str]:
+    """Progressively strip trailing serving/effort modifiers from a source model
+    name so it can match a canonical slug. Cross-source (Epoch + LMArena).
+
+    Iteratively peels (either `_`- or `-`-separated), most-specific first:
+      thinking[-NNk] · effort (max/xhigh/high/medium/low/min) · token budget (NNk)
+      · latest · preview · trailing -YYYY-MM-DD or -MM-DD date.
+    Also strips a leading `chatgpt-` marketing prefix. Returns each reduced form.
+    """
+    import re
+
+    out: list[str] = []
+    base = identity
+    # marketing prefix: chatgpt-4o-latest -> gpt-4o-latest (canonical uses gpt-)
+    if base.lower().startswith("chatgpt-"):
+        base = "gpt-" + base[len("chatgpt-"):]
+        out.append(base)
+
+    tail = re.compile(
+        r"^(.*?)[-_](?:"
+        r"thinking(?:[-_]\d+k)?|"
+        r"max|xhigh|high|medium|low|min|"
+        r"\d+k|latest|preview|exp|beta"
+        r")$",
+        re.IGNORECASE,
+    )
+    date = re.compile(r"^(.*?)[-_]\d{4}-\d{2}-\d{2}$")
+    short_date = re.compile(r"^(.*?)-\d{2}-\d{2}$")
+
+    # iterate so stacked suffixes peel: ...-20251101-thinking-32k -> ... -> base
+    changed = True
+    while changed:
+        changed = False
+        for rx in (tail, date, short_date):
+            m = rx.match(base)
+            if m and m.group(1) and m.group(1) != base:
+                base = m.group(1)
+                out.append(base)
+                changed = True
+                break
+    return out
+
+
+def link_model(conn: sqlite3.Connection, *, source_id: str,
+               source_model_id: str, parsed_fields: dict[str, Any]) -> int | None:
+    """Return the canonical model_id for a source record, or None.
+
+    Multi-pass, most-confident first:
+      1. exact alias_string already resolved
+      2. normalized full form (provider/model)
+      3. normalized bare model form (strip provider)
+      4. Epoch-style: strip effort/quant modifiers (`_max`,`-high`,`fp8`) then bare match
+    """
+    # 1. exact alias hit
+    row = conn.execute(
+        "SELECT model_id FROM model_alias WHERE alias_string = ? AND model_id IS NOT NULL "
+        "ORDER BY confidence DESC LIMIT 1", (source_model_id,)).fetchone()
+    if row:
+        return int(row[0])
+
+    # For epoch, the joinable identity lives in parsed_fields['model_version'].
+    identity = parsed_fields.get("model_version") or source_model_id
+
+    candidates = list(_norm_variants(identity))
+    # Epoch identities carry trailing effort/token/date suffixes that canonical
+    # slugs lack: `gpt-5-2025-08-07_high`, `claude-opus-4-6_64K`, `..._max`.
+    # Progressively strip and add each reduced form as a candidate.
+    for reduced in _suffix_reductions(identity):
+        candidates.extend(_norm_variants(reduced))
+    # generic modifier strip (fp8/quant/etc.)
+    stripped = identity
+    for mod in extract_modifiers(identity):
+        stripped = stripped.replace(mod, "")
+    stripped = stripped.strip(" -_/")
+    if stripped and stripped != identity:
+        candidates.extend(_norm_variants(stripped))
+
+    # Derive an org hint to disambiguate a bare name shared across developers.
+    org_hint = _org_hint(source_id, source_model_id, parsed_fields)
+    for cand in candidates:
+        if not cand:
+            continue
+        matches = conn.execute(
+            "SELECT ma.model_id, m.developer_id FROM model_alias ma "
+            "JOIN model m ON m.id = ma.model_id "
+            "WHERE ma.alias_normalized = ? AND ma.model_id IS NOT NULL "
+            "ORDER BY ma.confidence DESC", (cand,)).fetchall()
+        if not matches:
+            continue
+        if org_hint:
+            for model_id, dev in matches:
+                if dev and dev == org_hint:
+                    return int(model_id)
+        return int(matches[0][0])
+    return None
+
+
+def _org_hint(source_id: str, source_model_id: str,
+              parsed_fields: dict[str, Any]) -> str | None:
+    """Best-effort canonical developer id from source-specific provenance."""
+    raw = None
+    if source_id == "epoch":
+        raw = parsed_fields.get("organization")
+    elif source_id == "openrouter":
+        # OpenRouter id is `vendor/model`; vendor is the developer.
+        raw = source_model_id.split("/", 1)[0] if "/" in source_model_id else None
+        hf = parsed_fields.get("hugging_face_id")
+        if not raw and hf and "/" in hf:
+            raw = hf.split("/", 1)[0]
+    elif "/" in source_model_id:
+        raw = source_model_id.split("/", 1)[0]
+    return canonical_org(raw) if raw else None
+
+
+def _write_alias(conn, *, source_id, alias_string, alias_normalized, alias_kind,
+                 model_id, method, confidence, now) -> int:
+    """Idempotent alias upsert against the unique index. Returns 1 if inserted."""
+    existing = conn.execute(
+        "SELECT id FROM model_alias WHERE source_id=? AND alias_string=? AND alias_kind=? "
+        "AND COALESCE(valid_from,'')=''", (source_id, alias_string, alias_kind)).fetchone()
+    if existing:
+        conn.execute("UPDATE model_alias SET model_id=?, last_seen_at=? WHERE id=?",
+                     (model_id, now, existing[0]))
+        return 0
+    conn.execute(
+        """INSERT INTO model_alias (source_id, alias_string, alias_normalized, alias_kind,
+             model_id, resolution_method, confidence, first_seen_at, last_seen_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (source_id, alias_string, alias_normalized, alias_kind, model_id, method,
+         confidence, now, now))
+    return 1
+
+
+def _ensure_org(conn, org_id: str | None, fallback_name: str) -> None:
+    if not org_id:
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO organization (id, display_name) VALUES (?,?)",
+        (org_id, fallback_name))
+
+
+if __name__ == "__main__":
+    from ingest.base import connect
+    with connect() as c:
+        print(build_spine(c))
+        print(bridge_openrouter_aliases(c))
