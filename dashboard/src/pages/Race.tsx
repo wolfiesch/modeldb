@@ -64,7 +64,6 @@ interface RaceRow {
   value: number
 }
 
-const STEP_MS = 800
 const TOP_N = 20
 
 const REGIMES = [
@@ -133,6 +132,8 @@ export default function Race() {
   const [kind, setKind] = useState<SeriesKind>('text_overall')
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState<number>(1)
+  const stepMs = useMemo(() => Math.round(800 / speed), [speed])
   const overall = useData(loadOverallElo)
   const coding = useData(loadCodingElo)
   const benchmarkTimeseries = useData(loadBenchmarkTimeseries)
@@ -178,9 +179,9 @@ export default function Race() {
     if (!playing || timeline.length < 2) return
     const id = window.setInterval(() => {
       setIndex((current) => (current >= timeline.length - 1 ? 0 : current + 1))
-    }, STEP_MS)
+    }, stepMs)
     return () => window.clearInterval(id)
-  }, [playing, timeline.length])
+  }, [playing, timeline.length, stepMs])
 
   const rows = useMemo(() => {
     if (!activeData || currentTime == null) return []
@@ -231,7 +232,7 @@ export default function Race() {
     const initialRows = rowsRef.current
     if (initialRows.length > 0) {
       chart.resize()
-      chart.setOption(raceOption(initialRows, false, regime, valueFormat), { replaceMerge: ['yAxis', 'series'] })
+      chart.setOption(raceOption(initialRows, false, regime, valueFormat, stepMs), { replaceMerge: ['yAxis', 'series'] })
     }
 
     return () => {
@@ -249,10 +250,13 @@ export default function Race() {
     chart.resize()
     if (playing) {
       chart.setOption({
-        animationDurationUpdate: 650,
+        animationDurationUpdate: Math.round(stepMs * 0.8),
         animationEasingUpdate: 'cubicOut',
         xAxis: {
           max: niceAxisMax(rows, valueFormat),
+        },
+        yAxis: {
+          data: rows.map((r) => r.name),
         },
         series: [
           {
@@ -267,11 +271,11 @@ export default function Race() {
         ]
       })
     } else {
-      chart.setOption(raceOption(rows, false, regime, valueFormat), {
+      chart.setOption(raceOption(rows, false, regime, valueFormat, stepMs), {
         replaceMerge: ['yAxis', 'series'],
       })
     }
-  }, [chartHost, playing, regime, rows, valueFormat])
+  }, [chartHost, playing, regime, rows, valueFormat, stepMs])
 
   const handleScrub = (event: ChangeEvent<HTMLInputElement>) => {
     const nextIndex = Number(event.target.value)
@@ -285,7 +289,7 @@ export default function Race() {
       const nextValueFormat = valueFormatForRows(regime, nextRows)
       rowsRef.current = nextRows
       chart.resize()
-      chart.setOption(raceOption(nextRows, false, regime, nextValueFormat), { replaceMerge: ['yAxis', 'series'] })
+      chart.setOption(raceOption(nextRows, false, regime, nextValueFormat, stepMs), { replaceMerge: ['yAxis', 'series'] })
     }
   }
 
@@ -329,6 +333,18 @@ export default function Race() {
             </div>
           </div>
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+            <select
+              id="speed-selector"
+              value={speed}
+              onChange={(e) => setSpeed(Number(e.target.value))}
+              className="rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-neutral-500"
+              aria-label="Playback speed"
+            >
+              <option value={0.5}>0.5x speed</option>
+              <option value={1}>1.0x speed</option>
+              <option value={1.5}>1.5x speed</option>
+              <option value={2}>2.0x speed</option>
+            </select>
             <button
               onClick={() => setPlaying((value) => !value)}
               disabled={timeline.length < 2}
@@ -403,10 +419,11 @@ function raceOption(
   animateUpdate: boolean,
   regime: Regime,
   valueFormat: ValueFormat,
+  stepMs: number,
 ): EChartsCoreOption {
   return {
     backgroundColor: 'transparent',
-    animationDurationUpdate: animateUpdate ? 650 : 0,
+    animationDurationUpdate: animateUpdate ? Math.round(stepMs * 0.8) : 0,
     animationEasingUpdate: 'cubicOut',
     grid: { left: 170, right: 44, top: 8, bottom: 42 },
     xAxis: {
@@ -428,6 +445,7 @@ function raceOption(
       id: 'race-y',
       type: 'category',
       inverse: true,
+      data: rows.map((r) => r.name),
       axisLabel: { color: '#d4d4d4', fontSize: 11 },
       axisTick: { show: false },
     },
