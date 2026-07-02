@@ -96,7 +96,15 @@ def build_registry() -> tuple[dict[str, type[SourceParser]], dict[str, str]]:
 def run_source(source_id: str, parser_cls: type[SourceParser], conn: sqlite3.Connection) -> str:
     parser = parser_cls()
     try:
-        summary = parser.run(conn)
+        if source_id == "artificialanalysis":
+            from ingest.sources.artificialanalysis import fetch_with_cache
+
+            url, raw, http_meta = fetch_with_cache(conn)
+            snapshot_id = parser.snapshot(conn, url, raw, http_meta)
+            records = parser.store_records(conn, snapshot_id, parser.parse(raw, snapshot_id))
+            summary = {"source": source_id, "snapshot_id": snapshot_id, "records": records}
+        else:
+            summary = parser.run(conn)
     except NotImplementedError as exc:
         detail = str(exc) or "parser fetch/parse is not implemented"
         return f"{source_id}: not yet implemented ({detail})"

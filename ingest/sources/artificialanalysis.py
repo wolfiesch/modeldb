@@ -3,17 +3,96 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import re
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Callable
 from urllib.request import Request, urlopen
 
-from ingest.base import SourceModelRecord, SourceParser
+from ingest.base import REPO_ROOT, SourceModelRecord, SourceParser
 
 
 URL = "https://artificialanalysis.ai/api/v2/data/llms/models"
 PRIMARY_API_KEY_ENV = "ARTIFICIAL_ANALYSIS_API_KEY"
 LEGACY_API_KEY_ENV = "ARTIFICIALANALYSIS_API_KEY"
+CACHE_TTL = timedelta(hours=24)
+
+
+def fetch_with_cache(
+    conn,
+    *,
+    now: datetime | None = None,
+    repo_root: Path = REPO_ROOT,
+    urlopen_fn: Callable = urlopen,
+    cache_ttl: timedelta = CACHE_TTL,
+) -> tuple[str, bytes, dict]:
+    """Return a fresh AA raw payload from source_snapshot before using the API."""
+    cached = _fresh_cached_snapshot(conn, now=now, repo_root=repo_root, cache_ttl=cache_ttl)
+    if cached is not None:
+        return cached
+    return _fetch_live(urlopen_fn=urlopen_fn)
+
+
+def _fresh_cached_snapshot(
+    conn,
+    *,
+    now: datetime | None,
+    repo_root: Path,
+    cache_ttl: timedelta,
+) -> tuple[str, bytes, dict] | None:
+    current = now or datetime.now(timezone.utc)
+    rows = conn.execute(
+        """
+        SELECT url, raw_path, fetched_at, etag, last_modified
+        FROM source_snapshot
+        WHERE source_id = ? AND url = ? AND parser_version = ?
+        ORDER BY fetched_at DESC, id DESC
+        LIMIT 10
+        """,
+        (ArtificialAnalysisParser.source_id, URL, ArtificialAnalysisParser.parser_version),
+    ).fetchall()
+    for url, raw_path, fetched_at, etag, last_modified in rows:
+        fetched = _parse_snapshot_time(fetched_at)
+        if fetched is None or current - fetched > cache_ttl:
+            continue
+        path = repo_root / raw_path
+        if not path.exists():
+            continue
+        return url, path.read_bytes(), {"etag": etag, "last_modified": last_modified, "cached": True}
+    return None
+
+
+def _parse_snapshot_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _fetch_live(*, urlopen_fn: Callable = urlopen) -> tuple[str, bytes, dict]:
+    api_key = os.environ.get(PRIMARY_API_KEY_ENV) or os.environ.get(LEGACY_API_KEY_ENV)
+    if not api_key:
+        raise NotImplementedError(
+            f"Artificial Analysis fetch requires {PRIMARY_API_KEY_ENV} "
+            f"(or legacy {LEGACY_API_KEY_ENV}) and is opt-in to avoid API quota use."
+        )
+
+    request = Request(URL, headers={"x-api-key": api_key, "Accept": "application/json"})
+    with urlopen_fn(request) as response:
+        raw = response.read()
+        headers = response.headers
+        meta = {
+            "etag": headers.get("ETag"),
+            "last_modified": headers.get("Last-Modified"),
+        }
+        return response.geturl(), raw, meta
+
 
 EVALUATION_KEYS = (
     "artificial_analysis_intelligence_index",
@@ -56,22 +135,7 @@ class ArtificialAnalysisParser(SourceParser):
     parser_version = "0.2.0"
 
     def fetch(self) -> tuple[str, bytes, dict]:
-        api_key = os.environ.get(PRIMARY_API_KEY_ENV) or os.environ.get(LEGACY_API_KEY_ENV)
-        if not api_key:
-            raise NotImplementedError(
-                f"Artificial Analysis fetch requires {PRIMARY_API_KEY_ENV} "
-                f"(or legacy {LEGACY_API_KEY_ENV}) and is opt-in to avoid API quota use."
-            )
-
-        request = Request(URL, headers={"x-api-key": api_key, "Accept": "application/json"})
-        with urlopen(request) as response:
-            raw = response.read()
-            headers = response.headers
-            meta = {
-                "etag": headers.get("ETag"),
-                "last_modified": headers.get("Last-Modified"),
-            }
-            return response.geturl(), raw, meta
+        return _fetch_live()
 
     def parse(self, raw: bytes, snapshot_id: int) -> Iterator[SourceModelRecord]:
         payload = json.loads(raw)

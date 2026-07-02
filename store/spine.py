@@ -85,10 +85,10 @@ def _aa_identity_variants(identity: str) -> list[str]:
         "-non-reasoning-low-effort",
         "-non-reasoning-high-effort",
         "-adaptive-reasoning-max-effort",
-        "-adaptive",
+        "-non-reasoning",
         "-reasoning",
         "-thinking",
-        "-non-reasoning",
+        "-adaptive",
         "-high",
         "-medium",
         "-low",
@@ -270,31 +270,35 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
       3. normalized bare model form (strip provider)
       4. Epoch-style: strip effort/quant modifiers (`_max`,`-high`,`fp8`) then bare match
     """
-    # 1. exact alias hit
-    row = conn.execute(
-        "SELECT model_id FROM model_alias WHERE alias_string = ? AND model_id IS NOT NULL "
-        "ORDER BY confidence DESC LIMIT 1", (source_model_id,)).fetchone()
-    if row:
-        return int(row[0])
+    # 1. exact alias hit. Artificial Analysis rows are third-party UUIDs or
+    # provider-scoped names, so they must not resolve through bare display aliases
+    # before the provider-scoped candidate path below.
+    if source_id != "artificialanalysis":
+        row = conn.execute(
+            "SELECT model_id FROM model_alias WHERE alias_string = ? AND model_id IS NOT NULL "
+            "ORDER BY confidence DESC LIMIT 1", (source_model_id,)).fetchone()
+        if row:
+            return int(row[0])
 
     # For epoch, the joinable identity lives in parsed_fields['model_version'].
     identity = parsed_fields.get("model_version") or source_model_id
 
-    candidates = list(_norm_variants(identity))
     if source_id == "artificialanalysis":
-        candidates.extend(_artificial_analysis_candidates(parsed_fields))
-    # Epoch identities carry trailing effort/token/date suffixes that canonical
-    # slugs lack: `gpt-5-2025-08-07_high`, `claude-opus-4-6_64K`, `..._max`.
-    # Progressively strip and add each reduced form as a candidate.
-    for reduced in _suffix_reductions(identity):
-        candidates.extend(_norm_variants(reduced))
-    # generic modifier strip (fp8/quant/etc.)
-    stripped = identity
-    for mod in extract_modifiers(identity):
-        stripped = stripped.replace(mod, "")
-    stripped = stripped.strip(" -_/")
-    if stripped and stripped != identity:
-        candidates.extend(_norm_variants(stripped))
+        candidates = _artificial_analysis_candidates(parsed_fields)
+    else:
+        candidates = list(_norm_variants(identity))
+        # Epoch identities carry trailing effort/token/date suffixes that canonical
+        # slugs lack: `gpt-5-2025-08-07_high`, `claude-opus-4-6_64K`, `..._max`.
+        # Progressively strip and add each reduced form as a candidate.
+        for reduced in _suffix_reductions(identity):
+            candidates.extend(_norm_variants(reduced))
+        # generic modifier strip (fp8/quant/etc.)
+        stripped = identity
+        for mod in extract_modifiers(identity):
+            stripped = stripped.replace(mod, "")
+        stripped = stripped.strip(" -_/")
+        if stripped and stripped != identity:
+            candidates.extend(_norm_variants(stripped))
 
     # Derive an org hint to disambiguate a bare name shared across developers.
     org_hint = _org_hint(source_id, source_model_id, parsed_fields)
