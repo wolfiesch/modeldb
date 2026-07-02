@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import LabLogo from '../components/LabLogo'
 import { loadAliases, loadElo, loadModels, useData, type Model } from '../lib/data'
-import { labLabel } from '../lib/labs'
 
 type SortKey =
   | 'name'
@@ -209,16 +208,8 @@ export default function ModelExplorer() {
                   className="cursor-pointer border-t border-neutral-800/60 hover:bg-neutral-900"
                 >
                   <td className="px-3 py-2 text-neutral-100">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <LabLogo
-                        dev={m.dev}
-                        devName={m.devName}
-                        size={18}
-                        decorative
-                        title={labLabel(m.dev, m.devName)}
-                        className="shrink-0 gap-0"
-                      />
-                      <span className="truncate">{m.name}</span>
+                    <span className="block max-w-56 truncate" title={m.name}>
+                      {m.name}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-neutral-400">
