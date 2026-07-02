@@ -15,6 +15,7 @@ Design notes (from live-payload recon):
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import Any
 
@@ -43,6 +44,70 @@ def _norm_variants(source_model_id: str) -> list[str]:
     for v in variants:
         if v:
             seen.setdefault(v, None)
+    return list(seen)
+
+def _provider_scoped_norm_variants(source_model_id: str) -> list[str]:
+    """Normalized alias forms for sources where bare names are collision-prone."""
+    normalized = normalize_alias(source_model_id)
+    return [normalized] if normalized else []
+
+
+def _artificial_analysis_candidates(parsed_fields: dict[str, Any]) -> list[str]:
+    """Provider-scoped AA aliases derived from creator slug plus model slug/name."""
+    creator = parsed_fields.get("model_creator_slug")
+    if not isinstance(creator, str) or not creator.strip():
+        return []
+
+    raw_candidates: list[str] = []
+    for identity in (parsed_fields.get("slug"), parsed_fields.get("name"), parsed_fields.get("model_name")):
+        if not isinstance(identity, str) or not identity.strip():
+            continue
+        normalized_identity = normalize_alias(identity)
+        for variant in _aa_identity_variants(normalized_identity):
+            raw_candidates.append(f"{creator}/{variant}")
+
+    seen: dict[str, None] = {}
+    for candidate in raw_candidates:
+        for normalized in _provider_scoped_norm_variants(candidate):
+            seen.setdefault(normalized, None)
+    return list(seen)
+
+
+def _aa_identity_variants(identity: str) -> list[str]:
+    """AA display names use marketing order and reasoning suffixes."""
+    variants = [identity]
+    match = re.match(r"^(claude)-(\d(?:-\d)?)-(opus|sonnet|haiku)(.*)$", identity)
+    if match:
+        variants.append(f"{match.group(1)}-{match.group(3)}-{match.group(2)}{match.group(4)}")
+
+    base = identity
+    suffixes = (
+        "-non-reasoning-low-effort",
+        "-non-reasoning-high-effort",
+        "-adaptive-reasoning-max-effort",
+        "-adaptive",
+        "-reasoning",
+        "-thinking",
+        "-non-reasoning",
+        "-high",
+        "-medium",
+        "-low",
+        "-xhigh",
+    )
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                variants.append(base)
+                changed = True
+                break
+
+    seen: dict[str, None] = {}
+    for variant in variants:
+        if variant:
+            seen.setdefault(variant, None)
     return list(seen)
 
 
@@ -216,6 +281,8 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
     identity = parsed_fields.get("model_version") or source_model_id
 
     candidates = list(_norm_variants(identity))
+    if source_id == "artificialanalysis":
+        candidates.extend(_artificial_analysis_candidates(parsed_fields))
     # Epoch identities carry trailing effort/token/date suffixes that canonical
     # slugs lack: `gpt-5-2025-08-07_high`, `claude-opus-4-6_64K`, `..._max`.
     # Progressively strip and add each reduced form as a candidate.

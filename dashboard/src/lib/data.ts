@@ -145,6 +145,8 @@ export interface ModelEnrichment {
   artificialAnalysis: Record<string, ArtificialAnalysisSignal>
   medianOutputTokensPerSecond: CapabilitySignal | null
   medianTimeToFirstTokenSeconds: CapabilitySignal | null
+  medianTimeToFirstAnswerToken: CapabilitySignal | null
+  artificialAnalysisReleaseDate: CapabilitySignal | null
   vllm: {
     supported: CapabilitySignal | null
     architecture: CapabilitySignal | null

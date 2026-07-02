@@ -219,6 +219,26 @@ const models = q(
 }))
 writeJson('models.json', models)
 
+const ARTIFICIAL_ANALYSIS_BENCHMARK_IDS = new Set([
+  'artificial_analysis_intelligence_index',
+  'artificial_analysis_coding_index',
+  'artificial_analysis_math_index',
+  'mmlu_pro',
+  'gpqa',
+  'hle',
+  'livecodebench',
+  'aime',
+  'aime_25',
+  'math_500',
+  'ifbench',
+  'lcr',
+  'scicode',
+  'tau2',
+  'tau_banking',
+  'terminalbench_hard',
+  'terminalbench_v2_1'
+])
+
 // --- 3. enrichment.json -------------------------------------------------------
 const enrichmentByModel = new Map(
   models.map((model) => [
@@ -228,6 +248,8 @@ const enrichmentByModel = new Map(
       artificialAnalysis: {},
       medianOutputTokensPerSecond: null,
       medianTimeToFirstTokenSeconds: null,
+      medianTimeToFirstAnswerToken: null,
+      artificialAnalysisReleaseDate: null,
       vllm: { supported: null, architecture: null, backend: null }
     }
   ])
@@ -247,9 +269,10 @@ for (const r of q(
             ) AS rn
      FROM benchmark_result br
      LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
-     WHERE br.benchmark_id LIKE 'artificial_analysis_%' AND br.score IS NOT NULL
+     WHERE ss.source_id = 'artificialanalysis' AND br.score IS NOT NULL
    ) WHERE rn = 1`
 )) {
+  if (!ARTIFICIAL_ANALYSIS_BENCHMARK_IDS.has(r.benchmarkId)) continue
   const entry = enrichmentByModel.get(r.modelId)
   if (!entry) continue
   entry.artificialAnalysis[r.benchmarkId] = {
@@ -267,6 +290,8 @@ for (const r of q(
 const enrichmentCapabilityMap = {
   median_output_tokens_per_second: ['medianOutputTokensPerSecond', 'number'],
   median_time_to_first_token_seconds: ['medianTimeToFirstTokenSeconds', 'number'],
+  median_time_to_first_answer_token: ['medianTimeToFirstAnswerToken', 'number'],
+  artificial_analysis_release_date: ['artificialAnalysisReleaseDate', 'string'],
   vllm_supported: ['vllm.supported', 'boolean'],
   vllm_architecture: ['vllm.architecture', 'string'],
   vllm_backend: ['vllm.backend', 'string']
@@ -287,6 +312,8 @@ for (const r of q(
      WHERE mc.capability IN (
        'median_output_tokens_per_second',
        'median_time_to_first_token_seconds',
+       'median_time_to_first_answer_token',
+       'artificial_analysis_release_date',
        'vllm_supported',
        'vllm_architecture',
        'vllm_backend'

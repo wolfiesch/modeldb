@@ -33,12 +33,22 @@ BENCHMARK_CATALOG = {
     "hle": ("Artificial Analysis Humanity's Last Exam", "reasoning", "score"),
     "livecodebench": ("Artificial Analysis LiveCodeBench", "coding", "score"),
     "aime": ("Artificial Analysis AIME", "math", "score"),
+    "aime_25": ("Artificial Analysis AIME 2025", "math", "score"),
     "math_500": ("Artificial Analysis MATH-500", "math", "score"),
+    "ifbench": ("Artificial Analysis IFBench", "instruction_following", "score"),
+    "lcr": ("Artificial Analysis LCR", "coding", "score"),
+    "scicode": ("Artificial Analysis SciCode", "coding", "score"),
+    "tau2": ("Artificial Analysis Tau2", "agentic", "score"),
+    "tau_banking": ("Artificial Analysis Tau Banking", "agentic", "score"),
+    "terminalbench_hard": ("Artificial Analysis Terminal-Bench Hard", "agentic", "score"),
+    "terminalbench_v2_1": ("Artificial Analysis Terminal-Bench v2.1", "agentic", "score"),
 }
 
 CAPABILITY_FIELDS = {
     "median_output_tokens_per_second": "median_output_tokens_per_second",
     "median_time_to_first_token_seconds": "median_time_to_first_token_seconds",
+    "median_time_to_first_answer_token": "median_time_to_first_answer_token",
+    "artificial_analysis_release_date": "release_date",
 }
 
 PRICE_FIELDS = {
@@ -109,8 +119,9 @@ def promote_artificial_analysis(conn) -> dict[str, int]:
             continue
 
         for capability, field in CAPABILITY_FIELDS.items():
-            value = _optional_float(parsed_fields.get(field))
-            if value is None:
+            raw_value = parsed_fields.get(field)
+            value = str(raw_value).strip() if field == "release_date" and raw_value else _optional_float(raw_value)
+            if value is None or value == "":
                 continue
             _insert_capability(
                 conn,

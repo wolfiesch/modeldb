@@ -24,7 +24,15 @@ EVALUATION_KEYS = (
     "hle",
     "livecodebench",
     "aime",
+    "aime_25",
     "math_500",
+    "ifbench",
+    "lcr",
+    "scicode",
+    "tau2",
+    "tau_banking",
+    "terminalbench_hard",
+    "terminalbench_v2_1",
 )
 
 PRICE_KEYS = (
@@ -33,9 +41,11 @@ PRICE_KEYS = (
     "price_1m_blended_3_to_1",
 )
 
-PERFORMANCE_KEYS = (
+CAPABILITY_KEYS = (
     "median_output_tokens_per_second",
     "median_time_to_first_token_seconds",
+    "median_time_to_first_answer_token",
+    "release_date",
 )
 
 
@@ -126,12 +136,12 @@ def _parsed_fields(row: dict[str, Any]) -> dict[str, Any]:
     parsed["evaluations"] = _numeric_fields(evaluations, row, EVALUATION_KEYS)
     parsed["pricing"] = _numeric_fields(pricing, row, PRICE_KEYS)
 
-    for key in PERFORMANCE_KEYS:
-        value = _optional_float(row.get(key))
+    for key in CAPABILITY_KEYS:
+        value = row.get(key)
         if value is None:
-            value = _optional_float(_nested_lookup(row, key))
+            value = _nested_lookup(row, key)
         if value is not None:
-            parsed[key] = value
+            parsed[key] = _text(value) if key == "release_date" else _optional_float(value)
 
     for key, value in parsed["evaluations"].items():
         parsed[key] = value

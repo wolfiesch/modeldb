@@ -22,6 +22,20 @@ const artificialAnalysisLabels = [
   ['artificial_analysis_intelligence_index', 'Intelligence'],
   ['artificial_analysis_coding_index', 'Coding'],
   ['artificial_analysis_math_index', 'Math'],
+  ['mmlu_pro', 'MMLU-Pro'],
+  ['gpqa', 'GPQA'],
+  ['hle', 'HLE'],
+  ['livecodebench', 'LiveCodeBench'],
+  ['aime', 'AIME'],
+  ['aime_25', 'AIME 2025'],
+  ['math_500', 'MATH-500'],
+  ['ifbench', 'IFBench'],
+  ['lcr', 'LCR'],
+  ['scicode', 'SciCode'],
+  ['tau2', 'Tau2'],
+  ['tau_banking', 'Tau Banking'],
+  ['terminalbench_hard', 'Terminal-Bench Hard'],
+  ['terminalbench_v2_1', 'Terminal-Bench v2.1'],
 ] as const
 
 function formatTokenBudget(value: number | null) {
@@ -157,6 +171,8 @@ export default function ModelDetail() {
     artificialRows.length > 0 ||
     modelEnrichment?.medianOutputTokensPerSecond != null ||
     modelEnrichment?.medianTimeToFirstTokenSeconds != null ||
+    modelEnrichment?.medianTimeToFirstAnswerToken != null ||
+    modelEnrichment?.artificialAnalysisReleaseDate != null ||
     vllmRows.length > 0
 
   const specs: Array<[string, string]> = [
@@ -298,7 +314,9 @@ export default function ModelDetail() {
                 ) : null}
 
                 {modelEnrichment?.medianOutputTokensPerSecond ||
-                modelEnrichment?.medianTimeToFirstTokenSeconds ? (
+                modelEnrichment?.medianTimeToFirstTokenSeconds ||
+                modelEnrichment?.medianTimeToFirstAnswerToken ||
+                modelEnrichment?.artificialAnalysisReleaseDate ? (
                   <div>
                     <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
                       Speed
@@ -324,6 +342,26 @@ export default function ModelDetail() {
                               { maximumFractionDigits: 2 },
                             )}
                             s
+                          </dd>
+                        </div>
+                      ) : null}
+                      {modelEnrichment?.medianTimeToFirstAnswerToken ? (
+                        <div className="contents">
+                          <dt className="text-neutral-500">TTFA</dt>
+                          <dd className="text-right text-neutral-200">
+                            {Number(modelEnrichment.medianTimeToFirstAnswerToken.value).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 2 },
+                            )}
+                            s
+                          </dd>
+                        </div>
+                      ) : null}
+                      {modelEnrichment?.artificialAnalysisReleaseDate ? (
+                        <div className="contents">
+                          <dt className="text-neutral-500">AA release</dt>
+                          <dd className="text-right text-neutral-200">
+                            {String(modelEnrichment.artificialAnalysisReleaseDate.value)}
                           </dd>
                         </div>
                       ) : null}
