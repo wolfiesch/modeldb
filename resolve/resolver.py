@@ -86,6 +86,85 @@ def resolve_record(conn: sqlite3.Connection, source_model_record_id: int) -> int
     )
     return None
 
+def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) -> dict[str, int]:
+    """Materialize accepted review-queue rows into durable model aliases."""
+
+    params: list[Any] = []
+    limit_clause = ""
+    if limit is not None:
+        limit_clause = " LIMIT ?"
+        params.append(limit)
+
+    rows = conn.execute(
+        f"""
+        SELECT id, source_record_id, candidate_model_id, features_json
+        FROM entity_resolution_queue
+        WHERE status = 'accepted'
+          AND resolved_at IS NULL
+          AND candidate_model_id IS NOT NULL
+        ORDER BY id
+        {limit_clause}
+        """,
+        params,
+    ).fetchall()
+
+    processed = 0
+    aliases_upserted = 0
+    records_updated = 0
+    skipped = 0
+    for queue_id, source_record_id, candidate_model_id, features_json in rows:
+        features = _loads_json(features_json)
+        candidates = features.get("provider_scoped_candidates")
+        if not isinstance(candidates, list):
+            candidates = []
+
+        alias_ids: list[int] = []
+        record = _load_source_record(conn, int(source_record_id))
+        for candidate in candidates:
+            if not isinstance(candidate, str) or not candidate.strip():
+                continue
+            alias_string = candidate.strip()
+            alias_id = upsert_alias(
+                conn,
+                source_id=record["source_id"],
+                alias_string=alias_string,
+                alias_normalized=normalize_alias(alias_string),
+                alias_kind="api_model_id",
+                model_id=int(candidate_model_id),
+                resolution_method="manual_review",
+                confidence=1.0,
+                source_snapshot_id=record["source_snapshot_id"],
+            )
+            alias_ids.append(alias_id)
+            aliases_upserted += 1
+
+        if not alias_ids:
+            skipped += 1
+            continue
+
+        conn.execute(
+            "UPDATE source_model_record SET model_alias_id = ? WHERE id = ?",
+            (alias_ids[0], int(source_record_id)),
+        )
+        records_updated += 1
+        conn.execute(
+            """
+            UPDATE entity_resolution_queue
+            SET resolved_at = ?
+            WHERE id = ?
+            """,
+            (utcnow(), int(queue_id)),
+        )
+        processed += 1
+
+    return {
+        "processed": processed,
+        "aliases_upserted": aliases_upserted,
+        "records_updated": records_updated,
+        "skipped": skipped,
+    }
+
+
 
 def upsert_alias(
     conn: sqlite3.Connection,
@@ -431,8 +510,15 @@ def _first_string(*objects: dict[str, Any], keys: tuple[str, ...]) -> str | None
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv == ["drain-accepted"]:
+        with connect() as conn:
+            summary = drain_accepted_queue(conn)
+            conn.commit()
+        print(json.dumps(summary, sort_keys=True))
+        return 0
     if len(argv) != 1:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
+        print("       python -m resolve.resolver drain-accepted")
         return 2
     with connect() as conn:
         alias_id = resolve_record(conn, int(argv[0]))
