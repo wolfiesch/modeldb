@@ -163,11 +163,14 @@ def apply_reexport_model_merges(
     backup_path: str | None = None,
     allow_test_memory_backup: bool = False,
     allow_identical_capability_conflicts: bool = False,
+    skip_differing_capability_conflicts: bool = False,
 ) -> dict[str, Any]:
     """Apply re-export duplicate merge plans after concrete backup validation."""
     plans = plan_reexport_model_merges(conn)
     summary: dict[str, Any] = {
         "applied_count": 0,
+        "skipped_count": 0,
+        "skipped_plans": [],
         "fk_counts": {},
         "deleted_models": 0,
         "collapsed_capability_conflicts": 0,
@@ -181,6 +184,7 @@ def apply_reexport_model_merges(
         if not backup.exists() or not backup.is_file() or backup.stat().st_size <= 0:
             raise RuntimeError("Refusing to apply re-export model merges without an existing backup path.")
 
+    safe_plans: list[dict[str, Any]] = []
     for plan in plans:
         conflicts = plan["capability_conflicts"]
         differing = [
@@ -191,12 +195,28 @@ def apply_reexport_model_merges(
             )
         ]
         if differing:
-            raise RuntimeError("Refusing to merge differing model capability confidence or values.")
+            if not skip_differing_capability_conflicts:
+                raise RuntimeError("Refusing to merge differing model capability confidence or values.")
+            skipped = {
+                "duplicate_model_id": plan["duplicate_model_id"],
+                "duplicate_slug": plan["duplicate_slug"],
+                "target_model_id": plan["target_model_id"],
+                "target_slug": plan["target_slug"],
+                "reexport_provider": plan["reexport_provider"],
+                "capability_conflicts": differing,
+            }
+            summary["skipped_plans"].append(skipped)
+            summary["skipped_count"] += 1
+            continue
         if conflicts and not allow_identical_capability_conflicts:
             raise RuntimeError("Refusing to merge model capability conflicts without explicit allowance.")
+        safe_plans.append(plan)
+
+    if not safe_plans:
+        return summary
 
     with conn:
-        for plan in plans:
+        for plan in safe_plans:
             duplicate_model_id = int(plan["duplicate_model_id"])
             target_model_id = int(plan["target_model_id"])
 

@@ -230,6 +230,144 @@ class SpineReexportMigrationPlanTests(unittest.TestCase):
             """
         )
 
+    def _seed_mixed_reexport_duplicate_plans(self) -> None:
+        self._seed_reexport_duplicate_with_all_fk_surfaces()
+        self._insert_model(3, "qwen/qwen3-coder")
+        self._insert_model(4, "inceptron/qwen/qwen3-coder")
+        self._insert_alias(3, "Qwen/Qwen3-Coder", "qwen-qwen3-coder", 3)
+        self._insert_alias(
+            4,
+            "inceptron/qwen/qwen3-coder",
+            "qwen-qwen3-coder",
+            4,
+        )
+        self.conn.execute(
+            """
+            INSERT INTO alias_history (
+                id,
+                alias_id,
+                model_id,
+                observed_from,
+                evidence_snapshot_id,
+                confidence
+            )
+            VALUES (2, 4, 4, '2026-01-01T00:00:00Z', 1, 1.0)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO entity_resolution_queue (
+                id,
+                candidate_model_id,
+                reason,
+                features_json,
+                status,
+                created_at
+            )
+            VALUES (2, 4, 'alias collision', '{"alias":"qwen-qwen3-coder"}', 'pending', '2026-01-01T00:00:00Z')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO provider_surface (
+                id,
+                provider_id,
+                surface_type,
+                endpoint_model_id,
+                model_id,
+                source_snapshot_id,
+                metadata_json
+            )
+            VALUES (
+                2,
+                'inceptron',
+                'reexport',
+                'inceptron/qwen/qwen3-coder',
+                4,
+                1,
+                '{}'
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO model_artifact (
+                id,
+                model_id,
+                source_id,
+                artifact_ref,
+                artifact_type,
+                author,
+                metadata_json
+            )
+            VALUES (
+                2,
+                4,
+                'models_dev',
+                'inceptron/qwen/qwen3-coder',
+                'weights_url',
+                'inceptron',
+                '{}'
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO model_capability (
+                model_id,
+                capability,
+                value,
+                source_snapshot_id,
+                confidence
+            )
+            VALUES (3, 'context_window', '262144', 1, 1.0)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO model_capability (
+                model_id,
+                capability,
+                value,
+                source_snapshot_id,
+                confidence
+            )
+            VALUES (4, 'context_window', '262144', 1, 0.75)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO price_component (
+                id,
+                model_id,
+                provider_surface_id,
+                source_id,
+                component,
+                unit,
+                amount,
+                source_snapshot_id
+            )
+            VALUES (2, 4, 2, 'models_dev', 'input_token', '1m_tokens', 0.45, 1)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO benchmark_result (
+                id,
+                model_id,
+                provider_surface_id,
+                benchmark_id,
+                score,
+                metric,
+                measured_at,
+                source_snapshot_id,
+                raw_record_json
+            )
+            VALUES (2, 4, 2, 'migration_eval', 0.81, 'accuracy', '2026-01-01T00:00:00Z', 1, '{}')
+            """
+        )
+
+
     def _row_counts(self) -> dict[str, int]:
         tables = (
             "model",
@@ -442,6 +580,70 @@ class SpineReexportMigrationPlanTests(unittest.TestCase):
             )
 
         self._assert_state_unchanged(before)
+
+    def test_apply_reexport_model_merges_skips_only_differing_capability_conflicts_when_requested(
+        self,
+    ) -> None:
+        self._seed_mixed_reexport_duplicate_plans()
+        before = self._snapshot_state()
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "(?i)(capability.*confidence|confidence.*capability)",
+        ):
+            spine.apply_reexport_model_merges(
+                self.conn,
+                allow_test_memory_backup=True,
+                allow_identical_capability_conflicts=True,
+            )
+
+        self._assert_state_unchanged(before)
+
+        summary = spine.apply_reexport_model_merges(
+            self.conn,
+            allow_test_memory_backup=True,
+            allow_identical_capability_conflicts=True,
+            skip_differing_capability_conflicts=True,
+        )
+
+        self.assertEqual(summary["applied_count"], 1)
+        self.assertEqual(summary["skipped_count"], 1)
+        self.assertEqual(
+            [
+                (plan["duplicate_model_id"], plan["duplicate_slug"])
+                for plan in summary["skipped_plans"]
+            ],
+            [(4, "inceptron/qwen/qwen3-coder")],
+        )
+        self.assertEqual(
+            self.conn.execute("SELECT id FROM model ORDER BY id").fetchall(),
+            [(1,), (3,), (4,)],
+        )
+        self.assertEqual(
+            self._direct_model_fk_values(),
+            {
+                "model_alias.model_id": [(1, 1), (2, 1), (3, 3), (4, 4)],
+                "alias_history.model_id": [(1, 1), (2, 4)],
+                "entity_resolution_queue.candidate_model_id": [(1, 1), (2, 4)],
+                "provider_surface.model_id": [(1, 1), (2, 4)],
+                "model_artifact.model_id": [(1, 1), (2, 4)],
+                "model_capability.model_id": [
+                    (1, "context_window", 1, "128000"),
+                    (3, "context_window", 1, "262144"),
+                    (4, "context_window", 1, "262144"),
+                ],
+                "price_component.model_id": [(1, 1), (2, 4)],
+                "benchmark_result.model_id": [(1, 1), (2, 4)],
+            },
+        )
+
+        remaining_plans = spine.plan_reexport_model_merges(self.conn)
+        self.assertEqual(len(remaining_plans), 1)
+        self.assertEqual(remaining_plans[0]["duplicate_model_id"], 4)
+        self.assertEqual(
+            remaining_plans[0]["duplicate_slug"],
+            "inceptron/qwen/qwen3-coder",
+        )
 
 
     def test_apply_reexport_model_merges_rewrites_all_fk_surfaces_and_merges_identical_capability_conflicts(
