@@ -6,12 +6,20 @@ import ModelDetail from './pages/ModelDetail'
 import EloOverTime from './pages/EloOverTime'
 import Benchmarks from './pages/Benchmarks'
 import Landscape from './pages/Landscape'
+import Race from './pages/Race'
+import Compare from './pages/Compare'
+import Timeline from './pages/Timeline'
+import DevPage from './pages/DevPage'
+import CommandPalette from './components/CommandPalette'
 
 const NAV = [
   { to: '/', label: 'Overview' },
   { to: '/models', label: 'Model Explorer' },
   { to: '/elo', label: 'Arena over time' },
+  { to: '/race', label: 'Leaderboard race' },
   { to: '/benchmarks', label: 'Benchmarks' },
+  { to: '/compare', label: 'Compare' },
+  { to: '/timeline', label: 'Timeline' },
   { to: '/landscape', label: 'Landscape' },
 ]
 
@@ -72,6 +80,10 @@ export default function App() {
             <Route path="/elo" element={<EloOverTime />} />
             <Route path="/benchmarks" element={<Benchmarks />} />
             <Route path="/landscape" element={<Landscape />} />
+            <Route path="/race" element={<Race />} />
+            <Route path="/compare" element={<Compare />} />
+            <Route path="/timeline" element={<Timeline />} />
+            <Route path="/devs/:dev" element={<DevPage />} />
             <Route
               path="*"
               element={<div className="text-neutral-400">Page not found.</div>}
@@ -79,6 +91,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <CommandPalette />
     </div>
   )
 }

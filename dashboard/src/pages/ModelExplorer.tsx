@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { loadAliases, loadModels, useData, type Model } from '../lib/data'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
+import { loadAliases, loadElo, loadModels, useData, type Model } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 
 type SortKey =
@@ -14,6 +14,7 @@ type SortKey =
   | 'elo'
   | 'swe'
   | 'open'
+  | 'delta30d'
 
 const COLUMNS: Array<{ key: SortKey; label: string; numeric?: boolean }> = [
   { key: 'name', label: 'Model' },
@@ -24,11 +25,12 @@ const COLUMNS: Array<{ key: SortKey; label: string; numeric?: boolean }> = [
   { key: 'priceIn', label: '$ in/1M', numeric: true },
   { key: 'priceOut', label: '$ out/1M', numeric: true },
   { key: 'elo', label: 'ELO', numeric: true },
+  { key: 'delta30d', label: 'Δ30d', numeric: true },
   { key: 'swe', label: 'SWE-bench', numeric: true },
   { key: 'open', label: 'Open' },
 ]
 
-function sortValue(m: Model, key: SortKey): string | number | null {
+function sortValue(m: Model, key: SortKey, eloDeltaByModelId: Map<number, number>): string | number | null {
   switch (key) {
     case 'name':
       return m.name.toLowerCase()
@@ -46,6 +48,8 @@ function sortValue(m: Model, key: SortKey): string | number | null {
       return m.priceOut
     case 'elo':
       return m.scores.lmarena_text_overall?.score ?? null
+    case 'delta30d':
+      return eloDeltaByModelId.get(m.id) ?? null
     case 'swe':
       return m.scores.swe_bench_verified?.score ?? null
     case 'open':
@@ -56,13 +60,44 @@ function sortValue(m: Model, key: SortKey): string | number | null {
 const fmt = (v: number | null | undefined, digits = 2) =>
   v == null ? '—' : v >= 1000 ? v.toLocaleString() : v.toFixed(digits).replace(/\.00$/, '')
 
+const loadTextOverallElo = () => loadElo('text_overall')
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
+function formatDelta(delta: number | undefined): string {
+  if (delta == null) return '—'
+  const rounded = Math.round(delta)
+  return delta > 2 ? `+${rounded}` : String(rounded)
+}
+
+function deltaClass(delta: number | undefined): string {
+  if (delta == null) return 'text-neutral-500'
+  if (delta > 2) return 'text-emerald-400'
+  if (delta < -2) return 'text-red-400'
+  return 'text-neutral-300'
+}
+
 export default function ModelExplorer() {
   const { data: models, loading, error } = useData(loadModels)
   const { data: aliases } = useData(loadAliases)
+  const { data: textOverallElo } = useData(loadTextOverallElo)
   const navigate = useNavigate()
-  const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('elo')
-  const [sortDesc, setSortDesc] = useState(true)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    const requestedSort = searchParams.get('sort')
+    return COLUMNS.some((c) => c.key === requestedSort) ? (requestedSort as SortKey) : 'elo'
+  })
+  const [sortDesc, setSortDesc] = useState(() => searchParams.get('dir') !== 'asc')
+
+  useEffect(() => {
+    const next = new URLSearchParams()
+    const trimmedQuery = query.trim()
+    if (trimmedQuery) next.set('q', trimmedQuery)
+    next.set('sort', sortKey)
+    next.set('dir', sortDesc ? 'desc' : 'asc')
+    setSearchParams(next, { replace: true })
+  }, [query, sortKey, sortDesc, setSearchParams])
 
   const aliasIndex = useMemo(() => {
     const idx = new Map<number, string>()
@@ -73,6 +108,31 @@ export default function ModelExplorer() {
     }
     return idx
   }, [aliases])
+
+  const eloDeltaByModelId = useMemo(() => {
+    const deltas = new Map<number, number>()
+    if (!textOverallElo) return deltas
+    for (const series of textOverallElo.series) {
+      if (series.t.length < 2) continue
+
+      let latestIndex = 0
+      for (let i = 1; i < series.t.length; i += 1) {
+        if (series.t[i] >= series.t[latestIndex]) latestIndex = i
+      }
+
+      const cutoff = series.t[latestIndex] - THIRTY_DAYS_MS
+      let priorIndex = -1
+      for (let i = 0; i < series.t.length; i += 1) {
+        if (i === latestIndex || series.t[i] > cutoff) continue
+        if (priorIndex === -1 || series.t[i] > series.t[priorIndex]) priorIndex = i
+      }
+
+      if (priorIndex !== -1) {
+        deltas.set(series.modelId, series.elo[latestIndex] - series.elo[priorIndex])
+      }
+    }
+    return deltas
+  }, [textOverallElo])
 
   const rows = useMemo(() => {
     if (!models) return []
@@ -87,15 +147,15 @@ export default function ModelExplorer() {
       )
     }
     return [...out].sort((a, b) => {
-      const av = sortValue(a, sortKey)
-      const bv = sortValue(b, sortKey)
+      const av = sortValue(a, sortKey, eloDeltaByModelId)
+      const bv = sortValue(b, sortKey, eloDeltaByModelId)
       if (av == null && bv == null) return 0
       if (av == null) return 1
       if (bv == null) return -1
       const cmp = av < bv ? -1 : av > bv ? 1 : 0
       return sortDesc ? -cmp : cmp
     })
-  }, [models, query, sortKey, sortDesc, aliasIndex])
+  }, [models, query, sortKey, sortDesc, aliasIndex, eloDeltaByModelId])
 
   if (loading) return <div className="text-neutral-500">Loading…</div>
   if (error) return <div className="text-red-400">{error}</div>
@@ -154,7 +214,19 @@ export default function ModelExplorer() {
                     />
                     {m.name}
                   </td>
-                  <td className="px-3 py-2 text-neutral-400">{m.dev ?? '—'}</td>
+                  <td className="px-3 py-2 text-neutral-400">
+                    {m.dev ? (
+                      <Link
+                        to={`/devs/${m.dev}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:underline"
+                      >
+                        {m.dev}
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-neutral-400">{m.released ?? '—'}</td>
                   <td className="px-3 py-2 text-right text-neutral-300">
                     {m.ctx == null ? '—' : m.ctx.toLocaleString()}
@@ -168,6 +240,9 @@ export default function ModelExplorer() {
                     {m.scores.lmarena_text_overall
                       ? Math.round(m.scores.lmarena_text_overall.score)
                       : '—'}
+                  </td>
+                  <td className={`px-3 py-2 text-right ${deltaClass(eloDeltaByModelId.get(m.id))}`}>
+                    {formatDelta(eloDeltaByModelId.get(m.id))}
                   </td>
                   <td className="px-3 py-2 text-right text-neutral-300">
                     {m.scores.swe_bench_verified

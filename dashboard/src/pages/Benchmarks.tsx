@@ -1,15 +1,29 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { loadBenchmarks, loadModels, useData, type BenchmarkResult } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
 
+const DEFAULT_BENCHMARK_ID = 'swe_bench_verified'
+
 export default function Benchmarks() {
   const { data: benchmarks, loading, error } = useData(loadBenchmarks)
   const { data: models } = useData(loadModels)
   const navigate = useNavigate()
-  const [benchId, setBenchId] = useState('swe_bench_verified')
+  const [params, setParams] = useSearchParams()
+  const [benchId, setBenchId] = useState(() => params.get('b') ?? DEFAULT_BENCHMARK_ID)
+
+  useEffect(() => {
+    if (!benchmarks || benchmarks.some((b) => b.id === benchId)) return
+    setBenchId(DEFAULT_BENCHMARK_ID)
+  }, [benchmarks, benchId])
+
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (benchId !== DEFAULT_BENCHMARK_ID) next.set('b', benchId)
+    setParams(next, { replace: true })
+  }, [benchId, setParams])
 
   const bench = benchmarks?.find((b) => b.id === benchId) ?? null
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])

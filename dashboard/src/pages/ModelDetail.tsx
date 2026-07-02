@@ -127,13 +127,21 @@ export default function ModelDetail() {
         <Link to="/models" className="text-xs text-neutral-500 hover:text-neutral-300">
           ← Model Explorer
         </Link>
-        <h1 className="mt-1 flex items-center gap-3 text-2xl font-bold text-neutral-100">
-          <span
-            className="inline-block h-3 w-3 rounded-full"
-            style={{ backgroundColor: colorForDark(model.dev) }}
-          />
-          {model.name}
-        </h1>
+        <div className="mt-1 flex items-center gap-3">
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-neutral-100">
+            <span
+              className="inline-block h-3 w-3 rounded-full"
+              style={{ backgroundColor: colorForDark(model.dev) }}
+            />
+            {model.name}
+          </h1>
+          <Link
+            to={`/compare?a=${encodeURIComponent(model.slug)}`}
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500"
+          >
+            Compare
+          </Link>
+        </div>
         <div className="text-sm text-neutral-500">{model.slug}</div>
       </div>
 
@@ -144,7 +152,15 @@ export default function ModelDetail() {
             {specs.map(([k, v]) => (
               <div key={k} className="contents">
                 <dt className="text-neutral-500">{k}</dt>
-                <dd className="text-neutral-200">{v}</dd>
+                <dd className="text-neutral-200">
+                  {k === 'Developer' && model.dev ? (
+                    <Link to={`/devs/${model.dev}`} className="text-blue-400 hover:underline">
+                      {v}
+                    </Link>
+                  ) : (
+                    v
+                  )}
+                </dd>
               </div>
             ))}
           </dl>

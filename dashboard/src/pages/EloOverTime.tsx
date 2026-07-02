@@ -1,18 +1,38 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { loadElo, loadModels, useData, type EloFile } from '../lib/data'
 import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
+import { useSearchParams } from 'react-router'
 import type { EChartsCoreOption } from 'echarts/core'
 
 type SeriesKind = 'text_overall' | 'text_coding'
 
+function selectedModelsFromParam(params: URLSearchParams): Set<number> | null {
+  if (!params.has('m')) return null
+  const ids = (params.get('m') ?? '')
+    .split(',')
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id))
+  return new Set(ids)
+}
+
 export default function EloOverTime() {
-  const [kind, setKind] = useState<SeriesKind>('text_overall')
+  const [params, setParams] = useSearchParams()
+  const [kind, setKind] = useState<SeriesKind>(() =>
+    params.get('series') === 'text_coding' ? 'text_coding' : 'text_overall',
+  )
   const loader = useCallback(() => loadElo(kind), [kind])
   const { data: elo, loading, error } = useData(loader)
   const { data: models } = useData(loadModels)
-  const [selected, setSelected] = useState<Set<number> | null>(null) // null = default top 25
+  const [selected, setSelected] = useState<Set<number> | null>(() => selectedModelsFromParam(params)) // null = default top 25
   const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (kind !== 'text_overall') next.set('series', kind)
+    if (selected) next.set('m', [...selected].join(','))
+    setParams(next, { replace: true })
+  }, [kind, selected, setParams])
 
   const nameOf = useMemo(() => {
     const m = new Map<number, string>()

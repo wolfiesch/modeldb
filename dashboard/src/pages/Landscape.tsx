@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
-import { loadBenchmarks, loadModels, useData } from '../lib/data'
+import { loadBenchmarks, loadElo, loadModels, loadPrices, useData } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -9,6 +9,48 @@ interface Point {
   slug: string
   name: string
   dev: string | null
+}
+
+const loadTextOverallElo = () => loadElo('text_overall')
+const monthFormatter = new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+
+interface FrontierPricePoint {
+  value: [number, number]
+  name: string
+  price: number
+}
+
+function monthStart(ts: number) {
+  const d = new Date(ts)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
+}
+
+function monthEnd(ts: number) {
+  const d = new Date(ts)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999)
+}
+
+function addMonth(ts: number) {
+  const d = new Date(ts)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)
+}
+
+
+function modeNonZero(values: number[]) {
+  const counts = new Map<number, number>()
+  for (const value of values) {
+    if (value <= 0) continue
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  let best: number | null = null
+  let bestCount = 0
+  for (const [value, count] of counts) {
+    if (count > bestCount || (count === bestCount && (best == null || value < best))) {
+      best = value
+      bestCount = count
+    }
+  }
+  return best
 }
 
 const darkAxis = {
@@ -20,6 +62,8 @@ const darkAxis = {
 export default function Landscape() {
   const { data: models, loading, error } = useData(loadModels)
   const { data: benchmarks } = useData(loadBenchmarks)
+  const { data: prices } = useData(loadPrices)
+  const { data: textOverallElo } = useData(loadTextOverallElo)
   const navigate = useNavigate()
 
   const goTo = (params: unknown) => {
@@ -151,9 +195,137 @@ export default function Landscape() {
     }
   }, [models, benchmarks])
 
+  // 4. Cost of frontier intelligence over time
+  const costTrend = useMemo<{ option: EChartsCoreOption; usesCurrentPrices: boolean } | null>(() => {
+    if (!models || !prices || !textOverallElo) return null
+
+    const modelById = new Map(models.map((model) => [model.id, model] as const))
+    const priceRowsByModel = new Map(prices.map((entry) => [entry.modelId, entry.rows] as const))
+    const allTimes = textOverallElo.series.flatMap((series) => series.t)
+    if (allTimes.length === 0) return null
+
+    const firstMonth = monthStart(Math.min(...allTimes))
+    const lastMonth = monthStart(Math.max(...allTimes))
+    const months: number[] = []
+    for (let month = firstMonth; month <= lastMonth; month = addMonth(month)) {
+      months.push(month)
+    }
+
+    const currentPrice = (modelId: number) => {
+      const model = modelById.get(modelId)
+      return model?.priceOut != null && model.priceOut > 0 ? model.priceOut : null
+    }
+
+    const windowPrice = (modelId: number, at: number) => {
+      const rows = priceRowsByModel.get(modelId) ?? []
+      const values = rows
+        .filter((row) => {
+          if (row.component !== 'output_token' || row.sourceId !== 'models_dev' || row.usdPer1m == null) return false
+          if (!row.validFrom || Date.parse(row.validFrom) > at) return false
+          return !row.validTo || Date.parse(row.validTo) >= at
+        })
+        .map((row) => row.usdPer1m!)
+      return modeNonZero(values)
+    }
+
+    const buildPoints = (threshold: number, useCurrentPrices: boolean): FrontierPricePoint[] => {
+      const latestEloByModel = new Map<number, number>()
+      const cursorByModel = new Map<number, number>()
+      const points: FrontierPricePoint[] = []
+
+      for (const month of months) {
+        const end = monthEnd(month)
+        for (const series of textOverallElo.series) {
+          let cursor = cursorByModel.get(series.modelId) ?? 0
+          while (cursor < series.t.length && series.t[cursor] <= end) {
+            latestEloByModel.set(series.modelId, series.elo[cursor])
+            cursor += 1
+          }
+          cursorByModel.set(series.modelId, cursor)
+        }
+
+        let cheapest: { modelId: number; price: number } | null = null
+        for (const [modelId, elo] of latestEloByModel) {
+          if (elo < threshold) continue
+          const price = useCurrentPrices ? currentPrice(modelId) : windowPrice(modelId, end)
+          if (price == null) continue
+          if (!cheapest || price < cheapest.price) cheapest = { modelId, price }
+        }
+
+        if (cheapest) {
+          points.push({
+            value: [month, cheapest.price],
+            name: modelById.get(cheapest.modelId)?.name ?? `Model ${cheapest.modelId}`,
+            price: cheapest.price,
+          })
+        }
+      }
+
+      return points
+    }
+
+    const windowFrontier = buildPoints(1400, false)
+    const windowTop = buildPoints(1450, false)
+    const currentFrontier = buildPoints(1400, true)
+    const currentTop = buildPoints(1450, true)
+    const useCurrentPrices =
+      currentFrontier.length + currentTop.length > 0 &&
+      windowFrontier.length + windowTop.length < (currentFrontier.length + currentTop.length) * 0.6
+    const frontier = useCurrentPrices ? currentFrontier : windowFrontier
+    const top = useCurrentPrices ? currentTop : windowTop
+    if (frontier.length === 0 && top.length === 0) return null
+
+    return {
+      usesCurrentPrices: useCurrentPrices,
+      option: {
+        backgroundColor: 'transparent',
+        grid: { left: 72, right: 24, top: 40, bottom: 48 },
+        legend: { textStyle: { color: '#a3a3a3' }, top: 0 },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'line' },
+          formatter: (params: Array<{ seriesName: string; data?: FrontierPricePoint }>) =>
+            params
+              .filter((p) => p.data)
+              .map((p, index) => {
+                const data = p.data!
+                const month = monthFormatter.format(data.value[0])
+                const price = `$${data.price.toLocaleString(undefined, { maximumFractionDigits: data.price < 1 ? 3 : 2 })}/1M output`
+                const header = index === 0 ? `<b>${month}</b><br/>` : ''
+                return `${header}${p.seriesName}: ${data.name}<br/>${price}`
+              })
+              .join('<br/>'),
+        },
+        xAxis: { type: 'time', name: 'Month', nameLocation: 'middle', nameGap: 32, ...darkAxis, splitLine: { show: false } },
+        yAxis: { type: 'log', name: 'USD per 1M output tokens', ...darkAxis },
+        series: [
+          {
+            name: 'Frontier tier, ELO ≥ 1400',
+            type: 'line',
+            step: 'end',
+            showSymbol: false,
+            data: frontier,
+            lineStyle: { color: '#10b981', width: 3 },
+            itemStyle: { color: '#10b981' },
+          },
+          {
+            name: 'Top tier, ELO ≥ 1450',
+            type: 'line',
+            step: 'end',
+            showSymbol: false,
+            data: top,
+            lineStyle: { color: '#e0245e', width: 3 },
+            itemStyle: { color: '#e0245e' },
+          },
+        ],
+      },
+    }
+  }, [models, prices, textOverallElo])
+
   const ctxRef = useECharts(ctxOption, goTo)
   const freshRef = useECharts(freshOption, goTo)
   const gapRef = useECharts(gapOption)
+  const costRef = useECharts(costTrend?.option ?? null)
 
   if (loading) return <div className="text-neutral-500">Loading…</div>
   if (error) return <div className="text-red-400">{error}</div>
@@ -188,6 +360,20 @@ export default function Landscape() {
         </h2>
         {gapOption ? (
           <div ref={gapRef} className="h-[420px] w-full" />
+        ) : (
+          <div className="py-16 text-center text-sm text-neutral-500">No data.</div>
+        )}
+      </div>
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <h2 className="mb-2 text-sm font-semibold text-neutral-200">
+          Cost of frontier intelligence over time
+        </h2>
+        <p className="mb-2 text-xs text-neutral-500">
+          Cheapest model in each ELO tier by active models.dev output-token price
+          {costTrend?.usesCurrentPrices ? '; prices are current list prices.' : '.'}
+        </p>
+        {costTrend ? (
+          <div ref={costRef} className="h-[420px] w-full" />
         ) : (
           <div className="py-16 text-center text-sm text-neutral-500">No data.</div>
         )}
