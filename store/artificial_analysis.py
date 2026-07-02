@@ -5,7 +5,8 @@ import json
 from typing import Any
 
 from ingest.base import utcnow
-from store.spine import link_model
+from resolve.resolver import enqueue_ambiguous
+from store.spine import _artificial_analysis_candidates, link_model
 
 
 SOURCE_ID = "artificialanalysis"
@@ -74,10 +75,11 @@ def promote_artificial_analysis(conn) -> dict[str, int]:
     prices_inserted = 0
     linked = 0
     unlinked = 0
+    queue_cleared = 0
     skipped = 0
     valid_from = utcnow()
 
-    for source_model_id, source_snapshot_id, raw_record_json, parsed_fields_json in rows:
+    for source_record_id, source_model_id, source_snapshot_id, raw_record_json, parsed_fields_json in rows:
         parsed_fields = _parsed_fields(parsed_fields_json)
         if not parsed_fields:
             skipped += 1
@@ -91,8 +93,10 @@ def promote_artificial_analysis(conn) -> dict[str, int]:
         )
         if model_id is None:
             unlinked += 1
+            _enqueue_resolution_review(conn, source_record_id=source_record_id, parsed_fields=parsed_fields)
         else:
             linked += 1
+            queue_cleared += _clear_resolution_reviews(conn, source_record_id=source_record_id)
 
         evaluations = parsed_fields.get("evaluations")
         if not isinstance(evaluations, dict):
@@ -160,6 +164,7 @@ def promote_artificial_analysis(conn) -> dict[str, int]:
         "prices_inserted": prices_inserted,
         "linked": linked,
         "unlinked": unlinked,
+        "queue_cleared": queue_cleared,
         "skipped": skipped,
     }
 
@@ -172,10 +177,10 @@ def _source_snapshot_ids(conn) -> list[int]:
     return [int(row[0]) for row in rows]
 
 
-def _source_rows(conn) -> list[tuple[str, int, str | None, str | None]]:
+def _source_rows(conn) -> list[tuple[int, str, int, str | None, str | None]]:
     return conn.execute(
         """
-        SELECT smr.source_model_id, smr.source_snapshot_id, smr.raw_record_json, smr.parsed_fields_json
+        SELECT smr.id, smr.source_model_id, smr.source_snapshot_id, smr.raw_record_json, smr.parsed_fields_json
         FROM source_model_record smr
         JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
         WHERE ss.source_id = ?
@@ -204,9 +209,9 @@ def _delete_prior_capabilities(conn, snapshot_ids: list[int]) -> None:
     )
 
 
-def _benchmark_ids_present(rows: list[tuple[str, int, str | None, str | None]]) -> set[str]:
+def _benchmark_ids_present(rows: list[tuple[int, str, int, str | None, str | None]]) -> set[str]:
     present: set[str] = set()
-    for _source_model_id, _source_snapshot_id, _raw_record_json, parsed_fields_json in rows:
+    for _source_record_id, _source_model_id, _source_snapshot_id, _raw_record_json, parsed_fields_json in rows:
         parsed_fields = _parsed_fields(parsed_fields_json)
         evaluations = parsed_fields.get("evaluations")
         if isinstance(evaluations, dict):
@@ -302,6 +307,39 @@ def _insert_price(
         VALUES (?, NULL, ?, ?, '1m_tokens', 'USD', ?, ?, NULL, ?, NULL, ?)
         """,
         (model_id, SOURCE_ID, component, amount, amount, valid_from, source_snapshot_id),
+    )
+
+
+def _clear_resolution_reviews(conn, *, source_record_id: int) -> int:
+    cursor = conn.execute(
+        """
+        DELETE FROM entity_resolution_queue
+        WHERE source_record_id = ?
+          AND candidate_model_id IS NULL
+          AND status = 'pending'
+        """,
+        (source_record_id,),
+    )
+    return int(cursor.rowcount or 0)
+
+
+def _enqueue_resolution_review(conn, *, source_record_id: int, parsed_fields: dict[str, Any]) -> None:
+    candidates = _artificial_analysis_candidates(parsed_fields)
+    if not candidates:
+        return
+    enqueue_ambiguous(
+        conn,
+        source_record_id=source_record_id,
+        candidate_model_id=None,
+        reason="unresolved artificialanalysis provider-scoped aliases",
+        features={
+            "source_id": SOURCE_ID,
+            "provider_scoped_candidates": candidates,
+            "model_creator_slug": parsed_fields.get("model_creator_slug"),
+            "model_creator_name": parsed_fields.get("model_creator_name"),
+            "slug": parsed_fields.get("slug"),
+            "model_name": parsed_fields.get("name") or parsed_fields.get("model_name"),
+        },
     )
 
 
