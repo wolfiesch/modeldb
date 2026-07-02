@@ -21,6 +21,8 @@ This catalog documents the ranked source registry seeded by [`db/seed_sources.sq
 | 2 | `huggingface` | Open-weight identity: params from safetensors, license, base-model graph, commit SHA, last modified. | `https://huggingface.co/api/models` | A | none | Hugging Face repo IDs such as `org/model`. | Pull by known HF IDs first; do not full-crawl. Anonymous limit noted in registry is about 500 requests per 5 minutes. |
 | 2 | `swebench` | SWE-bench Full, Lite, Verified, and Multimodal percent-resolved results, cost, and per-instance data. | `https://raw.githubusercontent.com/SWE-bench/swe-bench.github.io/master/data/leaderboards.json` | A | none | SWE-bench leaderboard model names and provider routes. | Repository branch is `master`, not `main`. Keep cost and per-instance data as provenance-bearing facts where parsed. |
 | 2 | `aider` | Aider polyglot code-editing leaderboard. | `https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data/polyglot_leaderboard.yml` | A | none | `command` field carries provider/model route. | Displayed score is `pass_rate_2`; parse route aliases from `command`. |
+| 2 | `openvlm` | OpenCompass OpenVLM multimodal/VLM aggregate leaderboard. | `http://opencompass.openxlab.space/assets/OpenVLM.json` | A | none | OpenVLM leaderboard model labels. | Parse nested VLM benchmark scores into benchmark facts with source links. |
+| 2 | `bigcodebench` | BigCodeBench coding aggregate leaderboard. | `https://datasets-server.huggingface.co/rows?dataset=bigcode%2Fbigcodebench-results&config=default&split=train` | A | none | BigCodeBench row model names. | Datasets-server rows expose complete/instruct aggregate scores; keep row provenance. |
 | 2 | `livebench` | Per-question judgments for coding, math, reasoning, instruction following, language, and data analysis. | `https://huggingface.co/datasets/livebench/model_judgment` | A | none | LiveBench model names in judgment parquet rows. | Verify Hugging Face `lastModified` against repo release list for freshness. |
 | 2 | `open_llm_lb` | Archived open-model baselines for IFEval, BBH, MATH-L5, GPQA, MUSR, and MMLU-PRO. | `https://huggingface.co/api/datasets/open-llm-leaderboard/contents` | A | none | Open LLM Leaderboard model/repo names. | Frozen in 2025-03; use as historical baseline only. |
 | 2 | `anthropic_api` | Official Anthropic model inventory: ID, display name, created time, max input/max tokens, rich capabilities. | `https://api.anthropic.com/v1/models` | A | API key | Anthropic API model IDs. | Requires `anthropic-version` header. No pricing in this API. |
@@ -46,6 +48,8 @@ Confirmed live endpoints and access modes from the registry/recon:
 | `swebench` | `https://raw.githubusercontent.com/SWE-bench/swe-bench.github.io/master/data/leaderboards.json` | none | none |
 | `aider` | `https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data/polyglot_leaderboard.yml` | none | none |
 | `llm_prices` | `https://www.llm-prices.com/historical-v1.json` | none | none |
+| `openvlm` | `http://opencompass.openxlab.space/assets/OpenVLM.json` | none | none |
+| `bigcodebench` | `https://datasets-server.huggingface.co/rows?dataset=bigcode%2Fbigcodebench-results&config=default&split=train` | none | none |
 | `artificialanalysis` | `https://artificialanalysis.ai/api/v2/data/llms/models` | `x-api-key` | `ARTIFICIALANALYSIS_API_KEY` |
 | `anthropic_api` | `https://api.anthropic.com/v1/models` | API key plus `anthropic-version` header | `ANTHROPIC_API_KEY` |
 | `openai_api` | `https://api.openai.com/v1/models` | bearer/API key | `OPENAI_API_KEY` |
@@ -53,7 +57,7 @@ Confirmed live endpoints and access modes from the registry/recon:
 | `mistral_api` | `https://api.mistral.ai/v1/models` | bearer/API key | `MISTRAL_API_KEY` |
 
 Notes:
-- The `huggingface`, `livebench`, `open_llm_lb`, and `hf_model_card` sources are unauthenticated in the registry, but parsers should respect Hugging Face rate limits and avoid full crawls.
+- The `huggingface`, `livebench`, `open_llm_lb`, `openvlm`, `bigcodebench`, and `hf_model_card` sources are unauthenticated in the registry, but Hugging Face-backed parsers should respect rate limits and avoid full crawls.
 - `provider_blog` and `scale_seal` are event-driven extraction sources, not regular JSON pulls.
 - The OpenRouter model list is unauthenticated; if a future parser uses a private or rate-limited route, keep the public model list behavior separate from key-backed enrichment.
 
@@ -61,6 +65,6 @@ Notes:
 
 1. **Spine first:** `models_dev` and `openrouter` create the broadest model/provider/price alias surface.
 2. **Price history next:** `litellm` and `llm_prices` enrich aliases and temporal prices after canonical candidates exist.
-3. **Independent benchmarks:** `epoch`, `lmarena`, `swebench`, `aider`, `livebench`, and `open_llm_lb` add benchmark facts with provenance.
+3. **Independent benchmarks:** `epoch`, `lmarena`, `swebench`, `aider`, `deepswe`, `openvlm`, `bigcodebench`, `livebench`, and `open_llm_lb` add benchmark facts with provenance.
 4. **Enrichment:** `artificialanalysis`, `huggingface`, and first-party provider APIs add speed, artifact, capability, and inventory details.
 5. **Extraction-heavy sources:** `hf_model_card`, `provider_blog`, `lmarena_mirror`, and `scale_seal` are event-driven, non-spine sources.

@@ -379,6 +379,14 @@ const benchmarks = q(
           higher_is_better AS higherIsBetter, source_url AS sourceUrl
    FROM benchmark ORDER BY id`
 ).map((b) => {
+  const unresolvedCount = b.id.startsWith('lmarena_')
+    ? 0
+    : q(
+        `SELECT COUNT(*) AS n
+         FROM benchmark_result
+         WHERE benchmark_id = ? AND score IS NOT NULL AND model_id IS NULL`,
+        [b.id]
+      )[0].n
   const results = b.id.startsWith('lmarena_')
     ? undefined
     : q(
@@ -389,14 +397,14 @@ const benchmarks = q(
                 br.eval_condition_json AS evalCondition
          FROM benchmark_result br
          LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
-         WHERE br.benchmark_id = ? AND br.score IS NOT NULL
+         WHERE br.benchmark_id = ? AND br.score IS NOT NULL AND br.model_id IS NOT NULL
          ORDER BY br.measured_at`,
         [b.id]
       ).map((r) => ({
         ...r,
         evalCondition: r.evalCondition ? JSON.parse(r.evalCondition) : null
       }))
-  return results ? { ...b, results } : b
+  return results ? { ...b, results, unresolvedCount } : { ...b, unresolvedCount }
 })
 writeJson('benchmarks.json', benchmarks)
 

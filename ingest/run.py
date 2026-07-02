@@ -40,6 +40,8 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
     ParserSpec("deepswe", "ingest.sources.deepswe", "DeepSWEParser"),
     ParserSpec("livebench", "ingest.sources.livebench", "LiveBenchParser"),
     ParserSpec("open_llm_lb", "ingest.sources.open_llm_lb", "OpenLLMLBParser"),
+    ParserSpec("openvlm", "ingest.sources.openvlm", "OpenVLMParser"),
+    ParserSpec("bigcodebench", "ingest.sources.bigcodebench", "BigCodeBenchParser"),
     ParserSpec("mteb", "ingest.sources.mteb", "MTEBParser"),
     ParserSpec("anthropic_api", "ingest.sources.anthropic_api", "AnthropicAPIParser"),
     ParserSpec("openai_api", "ingest.sources.openai_api", "OpenAIAPIParser"),

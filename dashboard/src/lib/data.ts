@@ -56,6 +56,7 @@ export interface Benchmark {
   higherIsBetter: number
   sourceUrl: string | null
   results?: BenchmarkResult[]
+  unresolvedCount?: number
 }
 
 export interface EloFile {

@@ -41,6 +41,8 @@ M1_SOURCES = (
     "swebench",
     "aider",
     "deepswe",
+    "openvlm",
+    "bigcodebench",
     "vllm",
     "open_llm_lb",
     "artificialanalysis",
