@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import LabLogo from '../components/LabLogo'
 import { loadElo, loadModels, useData, type Model } from '../lib/data'
+import { labLabel, labSearchValues } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 
 const loadOverallElo = () => loadElo('text_overall')
@@ -81,12 +83,14 @@ export default function Timeline() {
     return allRows.filter((row) => {
       if (devFilter && row.model.dev !== devFilter) return false
       if (!q) return true
+      const labValues = labSearchValues(row.model.dev, row.model.devName)
       return [
         row.model.name,
         row.model.slug,
         row.model.dev,
         row.model.devName,
         row.model.family,
+        ...labValues,
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q))
@@ -132,7 +136,7 @@ export default function Timeline() {
               }`}
               style={{ borderColor: devFilter === dev ? colorForDark(dev) : undefined }}
             >
-              {dev}
+              <LabLogo dev={dev} size={16} showLabel labelClassName="truncate" />
             </button>
           ))}
         </div>
@@ -180,8 +184,17 @@ export default function Timeline() {
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm text-neutral-100">{row.model.name}</div>
-                    <div className="truncate text-xs text-neutral-500">
-                      {row.model.dev ?? 'unknown'} · {row.released}
+                    <div className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">
+                      <LabLogo
+                        dev={row.model.dev}
+                        devName={row.model.devName}
+                        size={16}
+                        showLabel
+                        title={labLabel(row.model.dev, row.model.devName)}
+                        className="min-w-0 gap-1.5"
+                        labelClassName="truncate"
+                      />
+                      <span className="shrink-0">· {row.released}</span>
                     </div>
                   </div>
                   <div className="relative h-8 overflow-hidden rounded-md border border-neutral-800 bg-neutral-950">

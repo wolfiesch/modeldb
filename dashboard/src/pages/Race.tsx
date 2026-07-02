@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { loadElo, useData, type EloFile } from '../lib/data'
+import { labLabel } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import '../lib/useECharts'
 import * as echarts from 'echarts/core'
@@ -245,7 +246,7 @@ function raceOption(rows: RaceRow[], animateUpdate: boolean): EChartsCoreOption 
       confine: true,
       formatter: (p: { data: { meta: RaceRow } }) => {
         const d = p.data.meta
-        return `<b>${d.name}</b><br/>ELO ${Math.round(d.elo)}<br/>${d.dev ?? 'unknown developer'}`
+        return `<b>${d.name}</b><br/>ELO ${Math.round(d.elo)}<br/>${labLabel(d.dev)}`
       },
     },
     series: [

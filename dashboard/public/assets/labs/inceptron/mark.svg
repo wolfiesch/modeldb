@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Inceptron logo">
+  <rect x="4" y="4" width="92" height="92" rx="18" fill="#f8fafc"/>
+  <g transform="translate(16.0000 16.0000) scale(2.344828)">
+<path fill="#293593" d="M21.5 29V8H12v21h9.5ZM12 17 0 29V8h9.5L0 17h12Z"/><path fill="#6DCDE5" d="M8 0 0 8h9l8-8H8Z"/><path fill="#EA0C8E" d="M29 0H17l-6.5 6.5H23L29 0Z"/><path fill="#6DCDE5" d="M29 21V0l-7.5 8v21l7.5-8Z"/><path fill="#EA0C8E" d="M9 8h12.5L12 17h9.5v3L12 29V17H0l9-9Z"/><path fill="#6DCDE5" d="M12 29H0l12-12v12Z"/>
+  </g>
+</svg>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { loadBenchmarks, loadElo, loadModels, loadPrices, useData } from '../lib/data'
+import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -84,7 +85,7 @@ export default function Landscape() {
       tooltip: {
         trigger: 'item',
         formatter: (p: { data: { meta: Point; value: [string, number] } }) =>
-          `<b>${p.data.meta.name}</b><br/>${p.data.value[0]} · ${p.data.value[1].toLocaleString()} tokens`,
+          `<b>${p.data.meta.name}</b><br/>${labLabel(p.data.meta.dev)}<br/>${p.data.value[0]} · ${p.data.value[1].toLocaleString()} tokens`,
       },
       series: [
         {
@@ -118,7 +119,7 @@ export default function Landscape() {
       tooltip: {
         trigger: 'item',
         formatter: (p: { data: { meta: Point & { released: string; cutoff: string } } }) =>
-          `<b>${p.data.meta.name}</b><br/>released ${p.data.meta.released} · cutoff ${p.data.meta.cutoff}`,
+          `<b>${p.data.meta.name}</b><br/>${labLabel(p.data.meta.dev)}<br/>released ${p.data.meta.released} · cutoff ${p.data.meta.cutoff}`,
       },
       series: [
         {

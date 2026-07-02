@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import LabLogo from '../components/LabLogo'
 import { loadBenchmarks, loadElo, loadMeta, loadModels, useData, type BenchmarkResult, type Model } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
@@ -354,7 +355,7 @@ export default function Overview() {
               }`}
               style={{ borderColor: devFilter === d ? colorForDark(d) : undefined }}
             >
-              {d}
+              <LabLogo dev={d} size={16} showLabel labelClassName="truncate" />
             </button>
           ))}
         </div>

@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { loadElo, loadModels, useData, type Model } from '../lib/data'
+import { LabLogo } from '../components/LabLogo'
+import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -11,6 +13,7 @@ interface ModelPoint {
   slug: string
   name: string
   dev: string | null
+  devName: string | null
   priceOut: number
   elo: number
   own: boolean
@@ -59,6 +62,7 @@ export default function DevPage() {
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
   const devIds = useMemo(() => new Set(devModels.map((m) => m.id)), [devModels])
   const brand = colorForDark(devKey)
+  const devName = devModels[0] ? labLabel(devModels[0].dev, devModels[0].devName) : labLabel(devKey)
 
   const fanOption = useMemo<EChartsCoreOption | null>(() => {
     if (!elo || devModels.length === 0) return null
@@ -121,6 +125,7 @@ export default function DevPage() {
           slug: m.slug,
           name: m.name,
           dev: m.dev,
+          devName: m.devName,
           priceOut: m.priceOut,
           elo: eloValue,
           own,
@@ -156,7 +161,7 @@ export default function DevPage() {
         trigger: 'item',
         formatter: (p: { data: { meta: ModelPoint } }) => {
           const d = p.data.meta
-          return `<b>${d.name}</b><br/>${d.dev ?? 'unknown'}<br/>$${fmt(
+          return `<b>${d.name}</b><br/>${labLabel(d.dev, d.devName)}<br/>$${fmt(
             d.priceOut,
           )}/1M out · ELO ${Math.round(d.elo)}`
         },
@@ -169,14 +174,14 @@ export default function DevPage() {
           data: points.filter((p) => !p.own).map(toDatum),
         },
         {
-          name: devModels[0]?.devName ?? devKey,
+          name: devName,
           type: 'scatter',
           symbolSize: 13,
           data: points.filter((p) => p.own).map(toDatum),
         },
       ],
     }
-  }, [brand, devKey, devModels, latestByModel, models])
+  }, [brand, devKey, devModels, devName, latestByModel, models])
 
   const fanRef = useECharts(fanOption)
   const scatterRef = useECharts(scatterOption, (params) => {
@@ -199,7 +204,6 @@ export default function DevPage() {
     )
   }
 
-  const devName = devModels[0].devName ?? devModels[0].dev ?? devKey
   const tableRows = [...devModels].sort(latestReleaseSort)
   const openCount = devModels.filter((m) => m.open === 1).length
 
@@ -209,11 +213,14 @@ export default function DevPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="mb-2 flex items-center gap-3">
-              <span
-                className="inline-block h-3.5 w-3.5 rounded-full ring-4 ring-neutral-800"
-                style={{ backgroundColor: brand }}
+              <LabLogo
+                dev={devModels[0].dev}
+                devName={devModels[0].devName}
+                size={40}
+                showLabel
+                labelClassName="text-2xl font-bold text-neutral-100"
+                imgClassName="rounded-lg"
               />
-              <h1 className="text-2xl font-bold text-neutral-100">{devName}</h1>
             </div>
             <div className="text-sm text-neutral-500">Developer portfolio and price position</div>
           </div>

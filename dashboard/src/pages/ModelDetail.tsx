@@ -10,6 +10,8 @@ import {
   loadRunOptions,
   useData,
 } from '../lib/data'
+import { LabLogo } from '../components/LabLogo'
+import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -177,7 +179,7 @@ export default function ModelDetail() {
 
   const specs: Array<[string, string]> = [
     ['Slug', model.slug],
-    ['Developer', model.devName ?? model.dev ?? '—'],
+    ['Developer', labLabel(model.dev, model.devName)],
     ['Family', model.family ?? '—'],
     ['Generation', model.generation ?? '—'],
     ['Tier / variant', model.tier ?? '—'],
@@ -204,12 +206,15 @@ export default function ModelDetail() {
           ← Model Explorer
         </Link>
         <div className="mt-1 flex items-center gap-3">
-          <h1 className="flex items-center gap-3 text-2xl font-bold text-neutral-100">
-            <span
-              className="inline-block h-3 w-3 rounded-full"
-              style={{ backgroundColor: colorForDark(model.dev) }}
+          <h1 className="flex min-w-0 items-center gap-3 text-2xl font-bold text-neutral-100">
+            <LabLogo
+              dev={model.dev}
+              devName={model.devName}
+              size={30}
+              decorative
+              imgClassName="rounded-md"
             />
-            {model.name}
+            <span className="truncate">{model.name}</span>
           </h1>
           <Link
             to={`/compare?a=${encodeURIComponent(model.slug)}`}
@@ -231,7 +236,7 @@ export default function ModelDetail() {
                 <dd className="text-neutral-200">
                   {k === 'Developer' && model.dev ? (
                     <Link to={`/devs/${model.dev}`} className="text-blue-400 hover:underline">
-                      {v}
+                      <LabLogo dev={model.dev} devName={model.devName} size={18} showLabel />
                     </Link>
                   ) : (
                     v

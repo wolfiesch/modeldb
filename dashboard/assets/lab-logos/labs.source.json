@@ -1,0 +1,481 @@
+{
+  "nvidia": {
+    "displayName": "NVIDIA",
+    "aliases": [
+      "NVIDIA AI",
+      "NVIDIA Research"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/nvidia/76B900",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/nvidia/76B900",
+    "sourceSha256": "db04aa87719392f22aa280fa0c9086d70d9e805024749747676fea820f7b00b4",
+    "trademarkNotes": "Simple Icons NVIDIA mark used as reviewed fallback; official NVIDIA page requires authorization for logo use.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#76B900",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "NVIDIA logo"
+  },
+  "alibaba": {
+    "displayName": "Alibaba Cloud / Qwen",
+    "aliases": [
+      "Alibaba Cloud",
+      "Qwen",
+      "Tongyi Qianwen"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/alibabacloud/FF6A00",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/alibabacloud/FF6A00",
+    "sourceSha256": "cb21fc53f968aa327c69a21965684e3d82f87a183683611d20743ff233e3930d",
+    "trademarkNotes": "Alibaba Cloud Simple Icons mark; Qwen-specific identity remains ambiguous.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#FF6A00",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Alibaba Cloud / Qwen logo"
+  },
+  "openai": {
+    "displayName": "OpenAI",
+    "aliases": [
+      "GPT",
+      "ChatGPT"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/openai.svg",
+    "sourceAssetUrl": "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/openai.svg",
+    "sourceSha256": "2b4a04ddc2395b20d168694d3850ce2050a702c4a0cdeb4d8b31b9a970481a8c",
+    "trademarkNotes": "Simple Icons OpenAI mark used pending direct brand-kit extraction from OpenAI brand page.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#10A37F",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "OpenAI logo"
+  },
+  "mistral": {
+    "displayName": "Mistral AI",
+    "aliases": [
+      "Mistral"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/mistralai/FF7000",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/mistralai/FF7000",
+    "sourceSha256": "5c8402654fbfc38345b1f84cf06a4586ef98ca8310e0eb56bf1d31eb591271c3",
+    "trademarkNotes": "Simple Icons Mistral AI mark; replace with official brand-kit asset if desired.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#FF7000",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Mistral AI logo"
+  },
+  "anthropic": {
+    "displayName": "Anthropic",
+    "aliases": [
+      "Claude"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/anthropic/D97757",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/anthropic/D97757",
+    "sourceSha256": "0d6f1c035b3a200b85b19a9b86e84b5ad71093a08c855895444e328de4c53199",
+    "trademarkNotes": "Simple Icons Anthropic mark; no public official brand kit found.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#D97757",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Anthropic logo"
+  },
+  "google": {
+    "displayName": "Google",
+    "aliases": [
+      "Google DeepMind",
+      "DeepMind",
+      "Gemini"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/google",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/google",
+    "sourceSha256": "147b64b183daad84440103815845150903f6175357419b0ccf2e5a6b622e62fa",
+    "trademarkNotes": "Simple Icons Google mark; Google brand rules apply.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#4285F4",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Google logo"
+  },
+  "cohere": {
+    "displayName": "Cohere",
+    "aliases": [
+      "Cohere For AI"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://cohere.com/logo.svg",
+    "sourceAssetUrl": "https://cohere.com/logo.svg",
+    "sourceSha256": "bb3aa4f834e01c2943d5a7a0622ff825535279a0c832f5bc45dc8e4dddb5ef74",
+    "trademarkNotes": "Official cohere.com logo.svg wordmark wrapped into square mark.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#39594D",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Cohere logo"
+  },
+  "zai": {
+    "displayName": "Z.ai",
+    "aliases": [
+      "Z AI",
+      "Zai",
+      "GLM"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    "sourceAssetUrl": "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    "sourceSha256": "07a45e8e35b0b631ed2c68cd1cb041f9721b1ceeb0bd0e34f1459b0304a741c7",
+    "trademarkNotes": "Official Z.ai CDN logo wrapped into square mark.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#1D4ED8",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Z.ai logo"
+  },
+  "zhipuai": {
+    "displayName": "Zhipu AI",
+    "aliases": [
+      "Zhipu",
+      "智谱AI",
+      "ChatGLM"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://www.zhipuai.cn/logo.svg",
+    "sourceAssetUrl": "https://www.zhipuai.cn/logo.svg",
+    "sourceSha256": "3f8e33a42855c45b94c6fd80c45ebd5dd4c2bfd26ec0f0fe5629f9c3c72b0121",
+    "trademarkNotes": "Official zhipuai.cn logo.svg wrapped into square mark; related to Z.ai identity.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#2563EB",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Zhipu AI logo"
+  },
+  "moonshotai": {
+    "displayName": "Moonshot AI / Kimi",
+    "aliases": [
+      "Moonshot",
+      "Kimi"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://www.kimi.com/favicon.ico",
+    "sourceAssetUrl": "https://www.kimi.com/favicon.ico",
+    "sourceSha256": "82dc4455113baa928b4eeb98f3ac17e4384811d8446ad831f3bd10581eff5e12",
+    "trademarkNotes": "Official Kimi favicon embedded as square source because no fetched SVG succeeded.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#111827",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Moonshot AI / Kimi logo"
+  },
+  "xai": {
+    "displayName": "xAI",
+    "aliases": [
+      "X.AI",
+      "Grok"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://x.ai/favicon.ico",
+    "sourceAssetUrl": "https://x.ai/favicon.ico",
+    "sourceSha256": "59fbabd76920f7170cfd1b75c610253dd06b0c45c4c58bf03bdf3f439392f2ee",
+    "trademarkNotes": "Official x.ai favicon embedded; not the X/Twitter logo.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#111111",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "xAI logo"
+  },
+  "llama": {
+    "displayName": "Llama",
+    "aliases": [
+      "Meta Llama",
+      "Meta AI"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/meta/0668E1",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/meta/0668E1",
+    "sourceSha256": "4ad01ccdec5679f5a3a73e4a040d54c640adfbe992b2d5d89d575410ae3b24af",
+    "trademarkNotes": "Meta Simple Icons mark used as fallback for Llama family; avoid if product-specific Llama mark is found.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#0668E1",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Llama logo"
+  },
+  "minimax": {
+    "displayName": "MiniMax",
+    "aliases": [
+      "MiniMax AI"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/minimax/7C3AED",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/minimax/7C3AED",
+    "sourceSha256": "e2168fbfae4db8ed1db84e69c127a419dbabecf2567a7b9204a835035cf048ce",
+    "trademarkNotes": "Simple Icons MiniMax mark.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#7C3AED",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "MiniMax logo"
+  },
+  "inceptron": {
+    "displayName": "Inceptron",
+    "aliases": [
+      "Inception Labs",
+      "Inception"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://framerusercontent.com/images/GlFn3XVnJw57e2ab8cjgbZs04s.svg",
+    "sourceAssetUrl": "https://framerusercontent.com/images/GlFn3XVnJw57e2ab8cjgbZs04s.svg",
+    "sourceSha256": "de372ab42ffae209b6fc2a3c53cb18471bd895e8f8f3bc2c493a541c4be41029",
+    "trademarkNotes": "Official Inceptron site icon from Framer CDN.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#0F766E",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Inceptron logo"
+  },
+  "xiaomi": {
+    "displayName": "Xiaomi",
+    "aliases": [
+      "MiLM",
+      "Xiaomi AI Lab"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/xiaomi/FF6900",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/xiaomi/FF6900",
+    "sourceSha256": "20fb26a3565ed90895c0f29ad006301a5dd9cede687b3ff4a27a0758ad0f9ede",
+    "trademarkNotes": "Simple Icons Xiaomi mark; official Xiaomi brand rules apply.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#FF6900",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Xiaomi logo"
+  },
+  "stepfun": {
+    "displayName": "StepFun",
+    "aliases": [
+      "StepFun AI",
+      "阶跃星辰"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://www.stepfun.com/step_favicon.svg",
+    "sourceAssetUrl": "https://www.stepfun.com/step_favicon.svg",
+    "sourceSha256": "155d5901d2974785f178e186f3a461e80d4406b1907c6ae4d27936f6e301cfa1",
+    "trademarkNotes": "Official StepFun favicon SVG.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#0EA5E9",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "StepFun logo"
+  },
+  "deepseek": {
+    "displayName": "DeepSeek",
+    "aliases": [
+      "DeepSeek AI"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.simpleicons.org/deepseek/4D6BFE",
+    "sourceAssetUrl": "https://cdn.simpleicons.org/deepseek/4D6BFE",
+    "sourceSha256": "5d2c1b237c7491fc075ee24195fb1d1231e8c269e38eaddb48ed364c5ef2c1d0",
+    "trademarkNotes": "Simple Icons DeepSeek mark; official favicon available as ICO fallback.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#4D6BFE",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "DeepSeek logo"
+  },
+  "perplexity": {
+    "displayName": "Perplexity",
+    "aliases": [
+      "Perplexity AI"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://www.perplexity.ai/favicon.svg",
+    "sourceAssetUrl": "https://www.perplexity.ai/favicon.svg",
+    "sourceSha256": "00180a688c194d684a69b247769cdf24a7720712256dbe0f334f97e8a15821e4",
+    "trademarkNotes": "Official Perplexity favicon SVG.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#20B8CD",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Perplexity logo"
+  },
+  "sakana": {
+    "displayName": "Sakana AI",
+    "aliases": [
+      "Sakana"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://sakana.ai/sakana-logo.png",
+    "sourceAssetUrl": "https://sakana.ai/sakana-logo.png",
+    "sourceSha256": "436186644a78f179cc66ece36bc24db483b6e77ff0698370352d2ce099c6b4ce",
+    "trademarkNotes": "Official Sakana PNG logo embedded into square SVG wrapper.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#EF4444",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Sakana AI logo"
+  },
+  "upstage": {
+    "displayName": "Upstage",
+    "aliases": [
+      "Upstage AI",
+      "Solar"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://cdn.prod.website-files.com/6743d5190bb2b52f38e99e37/6748713db65988aab4e2dbf7_G.WEB.svg",
+    "sourceAssetUrl": "https://cdn.prod.website-files.com/6743d5190bb2b52f38e99e37/6748713db65988aab4e2dbf7_G.WEB.svg",
+    "sourceSha256": "b1e56323951892332bdc7bce41968301ee0887c08f67c33f738c0db224ca8958",
+    "trademarkNotes": "Official Upstage shortcut icon SVG from website head.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#F97316",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Upstage logo"
+  },
+  "nova": {
+    "displayName": "Amazon Nova",
+    "aliases": [
+      "Nova",
+      "AWS Nova",
+      "Amazon"
+    ],
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "sourcePageUrl": "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/amazonaws.svg",
+    "sourceAssetUrl": "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/amazonaws.svg",
+    "sourceSha256": "79224fcf1ee0030e1ee8974ffb928af867b226f30f2e5817608897aafb45a14e",
+    "trademarkNotes": "AWS Simple Icons mark used as fallback for Amazon Nova until Nova-specific mark is found.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "community-preserved",
+      "background": "#FF9900",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Amazon Nova logo"
+  },
+  "poolside": {
+    "displayName": "Poolside",
+    "aliases": [
+      "Poolside AI"
+    ],
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "sourcePageUrl": "https://poolside.ai/favicon/favicon.svg",
+    "sourceAssetUrl": "https://poolside.ai/favicon/favicon.svg",
+    "sourceSha256": "4147f3b13b56114bcfec0d8a6d0d6d027fe117e38ff4ed55853376951c69fe40",
+    "trademarkNotes": "Official Poolside favicon SVG.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#14B8A6",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Poolside logo"
+  },
+  "sarvam": {
+    "displayName": "Sarvam AI",
+    "aliases": [
+      "Sarvam"
+    ],
+    "status": "active",
+    "sourceTier": "official-brand-page",
+    "sourcePageUrl": "https://assets.sarvam.ai/assets/brand/logos/sarvam-wordmark-black.svg",
+    "sourceAssetUrl": "https://assets.sarvam.ai/assets/brand/logos/sarvam-wordmark-black.svg",
+    "sourceSha256": "d0fde8af1b0fdb4991a708abbf8089544daa1acde4e23eef38a69a139d3a4a15",
+    "trademarkNotes": "Official Sarvam brand wordmark wrapped into square mark.",
+    "preferredUsage": "Square logo tile for dashboard labels, filters, and accessible legends; pair with text unless decorative.",
+    "colorPolicy": {
+      "kind": "official-preserved",
+      "background": "#16A34A",
+      "foreground": "#FFFFFF",
+      "note": "Source logo normalized onto a light square tile for dark-dashboard legibility; dashboard color retained for charts/fallbacks."
+    },
+    "a11yLabel": "Sarvam AI logo"
+  }
+}

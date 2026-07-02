@@ -1,0 +1,251 @@
+{
+  "nvidia": {
+    "label": "NVIDIA",
+    "aliases": [
+      "NVIDIA AI",
+      "NVIDIA Research"
+    ],
+    "markPath": "/assets/labs/nvidia/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#76B900"
+  },
+  "alibaba": {
+    "label": "Alibaba Cloud / Qwen",
+    "aliases": [
+      "Alibaba Cloud",
+      "Qwen",
+      "Tongyi Qianwen"
+    ],
+    "markPath": "/assets/labs/alibaba/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#FF6A00"
+  },
+  "openai": {
+    "label": "OpenAI",
+    "aliases": [
+      "GPT",
+      "ChatGPT"
+    ],
+    "markPath": "/assets/labs/openai/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#10A37F"
+  },
+  "mistral": {
+    "label": "Mistral AI",
+    "aliases": [
+      "Mistral"
+    ],
+    "markPath": "/assets/labs/mistral/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#FF7000"
+  },
+  "anthropic": {
+    "label": "Anthropic",
+    "aliases": [
+      "Claude"
+    ],
+    "markPath": "/assets/labs/anthropic/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#D97757"
+  },
+  "google": {
+    "label": "Google",
+    "aliases": [
+      "Google DeepMind",
+      "DeepMind",
+      "Gemini"
+    ],
+    "markPath": "/assets/labs/google/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#4285F4"
+  },
+  "cohere": {
+    "label": "Cohere",
+    "aliases": [
+      "Cohere For AI"
+    ],
+    "markPath": "/assets/labs/cohere/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#39594D"
+  },
+  "zai": {
+    "label": "Z.ai",
+    "aliases": [
+      "Z AI",
+      "Zai",
+      "GLM"
+    ],
+    "markPath": "/assets/labs/zai/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#1D4ED8"
+  },
+  "zhipuai": {
+    "label": "Zhipu AI",
+    "aliases": [
+      "Zhipu",
+      "智谱AI",
+      "ChatGLM"
+    ],
+    "markPath": "/assets/labs/zhipuai/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#2563EB"
+  },
+  "moonshotai": {
+    "label": "Moonshot AI / Kimi",
+    "aliases": [
+      "Moonshot",
+      "Kimi"
+    ],
+    "markPath": "/assets/labs/moonshotai/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#111827"
+  },
+  "xai": {
+    "label": "xAI",
+    "aliases": [
+      "X.AI",
+      "Grok"
+    ],
+    "markPath": "/assets/labs/xai/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#111111"
+  },
+  "llama": {
+    "label": "Llama",
+    "aliases": [
+      "Meta Llama",
+      "Meta AI"
+    ],
+    "markPath": "/assets/labs/llama/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#0668E1"
+  },
+  "minimax": {
+    "label": "MiniMax",
+    "aliases": [
+      "MiniMax AI"
+    ],
+    "markPath": "/assets/labs/minimax/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#7C3AED"
+  },
+  "inceptron": {
+    "label": "Inceptron",
+    "aliases": [
+      "Inception Labs",
+      "Inception"
+    ],
+    "markPath": "/assets/labs/inceptron/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#0F766E"
+  },
+  "xiaomi": {
+    "label": "Xiaomi",
+    "aliases": [
+      "MiLM",
+      "Xiaomi AI Lab"
+    ],
+    "markPath": "/assets/labs/xiaomi/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#FF6900"
+  },
+  "stepfun": {
+    "label": "StepFun",
+    "aliases": [
+      "StepFun AI",
+      "阶跃星辰"
+    ],
+    "markPath": "/assets/labs/stepfun/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#0EA5E9"
+  },
+  "deepseek": {
+    "label": "DeepSeek",
+    "aliases": [
+      "DeepSeek AI"
+    ],
+    "markPath": "/assets/labs/deepseek/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#4D6BFE"
+  },
+  "perplexity": {
+    "label": "Perplexity",
+    "aliases": [
+      "Perplexity AI"
+    ],
+    "markPath": "/assets/labs/perplexity/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#20B8CD"
+  },
+  "sakana": {
+    "label": "Sakana AI",
+    "aliases": [
+      "Sakana"
+    ],
+    "markPath": "/assets/labs/sakana/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#EF4444"
+  },
+  "upstage": {
+    "label": "Upstage",
+    "aliases": [
+      "Upstage AI",
+      "Solar"
+    ],
+    "markPath": "/assets/labs/upstage/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#F97316"
+  },
+  "nova": {
+    "label": "Amazon Nova",
+    "aliases": [
+      "Nova",
+      "AWS Nova",
+      "Amazon"
+    ],
+    "markPath": "/assets/labs/nova/mark.svg",
+    "status": "needs-review",
+    "sourceTier": "trusted-community",
+    "color": "#FF9900"
+  },
+  "poolside": {
+    "label": "Poolside",
+    "aliases": [
+      "Poolside AI"
+    ],
+    "markPath": "/assets/labs/poolside/mark.svg",
+    "status": "active",
+    "sourceTier": "official-site-asset",
+    "color": "#14B8A6"
+  },
+  "sarvam": {
+    "label": "Sarvam AI",
+    "aliases": [
+      "Sarvam"
+    ],
+    "markPath": "/assets/labs/sarvam/mark.svg",
+    "status": "active",
+    "sourceTier": "official-brand-page",
+    "color": "#16A34A"
+  }
+}

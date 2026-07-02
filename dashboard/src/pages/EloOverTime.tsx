@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { loadElo, loadModels, useData, type EloFile } from '../lib/data'
+import LabLogo from '../components/LabLogo'
+import { labLabel } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import { useSearchParams } from 'react-router'
@@ -203,11 +205,14 @@ function ActiveChips({
           key={m.id}
           onClick={() => onToggle(m.id)}
           className="group flex items-center gap-1.5 rounded-full border border-neutral-800 bg-neutral-900 px-2.5 py-1 text-[11px] text-neutral-300 hover:border-neutral-600"
-          title="Remove from chart"
+          title={`${labLabel(m.dev)} · remove from chart`}
         >
-          <span
-            className="inline-block h-1.5 w-1.5 rounded-full"
-            style={{ backgroundColor: colorForDark(m.dev) }}
+          <LabLogo
+            dev={m.dev}
+            size={16}
+            decorative
+            className="shrink-0"
+            imgClassName="rounded-sm"
           />
           {nameOf.get(m.id) ?? m.slug}
           <span className="text-neutral-600 group-hover:text-neutral-400">×</span>

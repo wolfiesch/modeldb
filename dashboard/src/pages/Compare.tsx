@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { loadElo, loadModels, useData, type Model } from '../lib/data'
+import { LabLogo } from '../components/LabLogo'
+import { labSearchValues } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -471,11 +473,14 @@ function ModelPicker({
     const needle = query.trim().toLowerCase()
     if (!needle) return []
     return models
-      .filter(
-        (candidate) =>
+      .filter((candidate) => {
+        const labValues = labSearchValues(candidate.dev, candidate.devName)
+        return (
           candidate.slug.toLowerCase().includes(needle) ||
-          candidate.name.toLowerCase().includes(needle),
-      )
+          candidate.name.toLowerCase().includes(needle) ||
+          labValues.some((value) => value.toLowerCase().includes(needle))
+        )
+      })
       .slice(0, 12)
   }, [models, query])
 
@@ -486,12 +491,9 @@ function ModelPicker({
           <div className="text-xs uppercase tracking-wide text-neutral-600">{label}</div>
           <div className="mt-1 flex items-center gap-2 text-sm font-medium text-neutral-100">
             {model && (
-              <span
-                className="inline-block h-2 w-2 rounded-full"
-                style={{ backgroundColor: colorForDark(model.dev) }}
-              />
+              <LabLogo dev={model.dev} devName={model.devName} size={18} decorative />
             )}
-            {model?.name ?? 'No model selected'}
+            <span className="truncate">{model?.name ?? 'No model selected'}</span>
           </div>
         </div>
         {model && (
@@ -522,9 +524,12 @@ function ModelPicker({
                   <span className="block truncate text-neutral-200">{candidate.name}</span>
                   <span className="block truncate text-neutral-600">{candidate.slug}</span>
                 </span>
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: colorForDark(candidate.dev) }}
+                <LabLogo
+                  dev={candidate.dev}
+                  devName={candidate.devName}
+                  size={18}
+                  decorative
+                  className="shrink-0"
                 />
               </button>
             ))}

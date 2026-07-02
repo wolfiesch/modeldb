@@ -1,4 +1,5 @@
 // Ported from viz/lib/theme.mjs — same values, TS translation.
+import { labColorFor, labColorForDark } from './labs'
 
 export const BRAND: Record<string, string> = {
   anthropic: '#d97757',
@@ -21,13 +22,11 @@ export const MUTED = '#64748b'
 export const FAINT = '#94a3b8'
 
 export function colorFor(developerId: string | null | undefined): string {
-  return BRAND[String(developerId ?? '').toLowerCase()] ?? NEUTRAL
+  return labColorFor(developerId)
 }
 
-// xAI's brand black is invisible on the dark shell; lighten just for dark UI.
 export function colorForDark(developerId: string | null | undefined): string {
-  const c = colorFor(developerId)
-  return c === '#111111' ? '#9ca3af' : c
+  return labColorForDark(developerId)
 }
 
 export function shortName(slug: string): string {

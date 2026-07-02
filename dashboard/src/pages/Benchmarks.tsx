@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { loadBenchmarks, loadModels, useData, type BenchmarkResult } from '../lib/data'
+import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -90,7 +91,7 @@ export default function Benchmarks() {
         formatter: (p: { dataIndex: number }) => {
           const r = rows[p.dataIndex]
           const m = modelById.get(r.modelId)
-          return `<b>${m?.name ?? r.modelId}</b><br/>${r.score}${
+          return `<b>${m?.name ?? r.modelId}</b><br/>${labLabel(m?.dev)}<br/>${r.score}${
             r.selfReported === 1 ? ' · self-reported' : ''
           }`
         },
@@ -155,7 +156,7 @@ export default function Benchmarks() {
         trigger: 'item',
         formatter: (p: { data: { meta: (typeof pts)[number] } }) => {
           const d = p.data.meta
-          return `<b>${d.name}</b><br/>score ${d.score} · $${d.costPerPoint.toFixed(
+          return `<b>${d.name}</b><br/>${labLabel(d.dev)}<br/>score ${d.score} · $${d.costPerPoint.toFixed(
             4,
           )}/point${d.selfReported === 1 ? ' · self-reported' : ''}`
         },
