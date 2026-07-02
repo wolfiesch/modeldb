@@ -164,6 +164,99 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) 
         "skipped": skipped,
     }
 
+_QUEUE_FAMILY_SUFFIXES = (
+    "non-reasoning",
+    "reasoning",
+    "preview",
+    "adaptive",
+    "high",
+    "medium",
+    "low",
+    "xhigh",
+)
+
+
+def pending_queue_report(
+    conn: sqlite3.Connection,
+    *,
+    source_id: str = "artificialanalysis",
+    sample_limit: int = 3,
+) -> dict[str, Any]:
+    """Summarize pending null-candidate queue rows for one source."""
+
+    rows = conn.execute(
+        """
+        SELECT erq.id, erq.source_record_id, erq.features_json,
+               smr.source_model_id, smr.display_name
+        FROM entity_resolution_queue erq
+        JOIN source_model_record smr ON smr.id = erq.source_record_id
+        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+        WHERE ss.source_id = ?
+          AND erq.status = 'pending'
+          AND erq.resolved_at IS NULL
+          AND erq.candidate_model_id IS NULL
+        ORDER BY erq.id
+        """,
+        (source_id,),
+    ).fetchall()
+
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for queue_id, source_record_id, features_json, source_model_id, display_name in rows:
+        features = _loads_json(features_json)
+        provider = _text_or_unknown(features.get("model_creator_slug"))
+        candidates = _string_list(features.get("provider_scoped_candidates"))
+        first_candidate = candidates[0] if candidates else ""
+        family = _queue_candidate_family(provider, first_candidate)
+        key = (provider, family)
+        group = groups.setdefault(
+            key,
+            {"provider": provider, "family": family, "count": 0, "samples": []},
+        )
+        group["count"] += 1
+        if len(group["samples"]) < sample_limit:
+            group["samples"].append(
+                {
+                    "queue_id": int(queue_id),
+                    "source_record_id": int(source_record_id),
+                    "source_model_id": source_model_id,
+                    "model_name": features.get("model_name") or display_name,
+                    "slug": features.get("slug"),
+                    "first_candidate": first_candidate or None,
+                    "candidate_count": len(candidates),
+                }
+            )
+
+    ordered_groups = sorted(groups.values(), key=lambda row: (-row["count"], row["provider"], row["family"]))
+    return {"source_id": source_id, "total": len(rows), "groups": ordered_groups}
+
+
+def _queue_candidate_family(provider: str, candidate: str) -> str:
+    if not candidate:
+        return "unknown"
+    prefix = f"{provider}-" if provider != "unknown" else ""
+    family = candidate.removeprefix(prefix)
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _QUEUE_FAMILY_SUFFIXES:
+            suffix_token = f"-{suffix}"
+            if family.endswith(suffix_token):
+                family = family[: -len(suffix_token)]
+                changed = True
+                break
+    return family or "unknown"
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _text_or_unknown(value: Any) -> str:
+    return value.strip() if isinstance(value, str) and value.strip() else "unknown"
+
+
 
 
 def upsert_alias(
@@ -516,9 +609,19 @@ def main(argv: list[str] | None = None) -> int:
             conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
+    if argv and argv[0] == "queue-report":
+        if len(argv) > 2:
+            print("Usage: python -m resolve.resolver queue-report [source_id]")
+            return 2
+        source_id = argv[1] if len(argv) == 2 else "artificialanalysis"
+        with connect() as conn:
+            report = pending_queue_report(conn, source_id=source_id)
+        print(json.dumps(report, sort_keys=True))
+        return 0
     if len(argv) != 1:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
         print("       python -m resolve.resolver drain-accepted")
+        print("       python -m resolve.resolver queue-report [source_id]")
         return 2
     with connect() as conn:
         alias_id = resolve_record(conn, int(argv[0]))
