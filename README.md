@@ -40,6 +40,27 @@ for f in viz/*.mjs; do bun "$f"; done
 > git-ignored because they are regenerable. `store/pipeline.py` fetches live
 > sources, so a rebuild reflects source state at run time, not a frozen fixture.
 
+## Dashboard
+
+`dashboard/` is a static React + ECharts SPA for browsing everything in the DB,
+live at <https://models.wolfie.gg>.
+
+```bash
+bun run dash:dev      # extract-once assumed; Vite dev server at :5173
+bun run dash:build    # bake db -> dashboard/public/data/*.json, then vite build -> dashboard/dist/
+```
+
+Deploy (Hostinger VPS, Caddy static site):
+
+```bash
+bun run dash:build
+rsync -avz --delete dashboard/dist/ hostinger-devbox:/srv/agent-webhook-hub/static/models/
+```
+
+The Caddy route (`models.wolfie.gg` block in `/srv/agent-webhook-hub/Caddyfile`)
+and the Cloudflare DNS A record are one-time setup; redeploys after a DB refresh
+are just the two commands above.
+
 ## Status
 
 **M1 working.** Ingest parsers, the resolve/store pipeline, and the

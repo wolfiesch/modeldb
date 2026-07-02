@@ -28,3 +28,7 @@ node_modules/
 # SVG render intermediates (byproduct of jsdom->rsvg PNG pipeline)
 viz/out/*.svg
 viz/bakeoff/*.svg
+
+# Dashboard build artifacts (regenerable via `bun run dash:build`)
+dashboard/dist/
+dashboard/public/data/
