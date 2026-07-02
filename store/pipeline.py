@@ -26,11 +26,25 @@ from store.benchmarks import promote_benchmarks
 from store.external_benchmarks import promote_external_benchmarks
 from store.open_llm_lb import promote_open_llm_lb
 from store.mteb import promote_mteb
+from store.artificial_analysis import promote_artificial_analysis
+from store.vllm import promote_vllm
+from store.deepswe import promote_deepswe
 from store.arena import promote_arena
 from store.capabilities import promote_capabilities
 from store.announcement import capture_announcement, SONNET5_EVIDENCE
 
-M1_SOURCES = ("models_dev", "openrouter", "epoch", "lmarena", "swebench", "aider", "open_llm_lb")
+M1_SOURCES = (
+    "models_dev",
+    "openrouter",
+    "epoch",
+    "lmarena",
+    "swebench",
+    "aider",
+    "deepswe",
+    "vllm",
+    "open_llm_lb",
+    "artificialanalysis",
+)
 
 
 def run_pipeline(
@@ -72,6 +86,9 @@ def run_pipeline(
         summary["external_benchmarks"] = promote_external_benchmarks(conn)
         summary["open_llm_lb"] = promote_open_llm_lb(conn)
         summary["mteb"] = promote_mteb(conn)
+        summary["deepswe"] = promote_deepswe(conn)
+        summary["artificial_analysis"] = promote_artificial_analysis(conn)
+        summary["vllm"] = promote_vllm(conn)
         conn.commit()
     return summary
 

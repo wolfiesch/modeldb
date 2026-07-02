@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import {
   loadAliases,
   loadBenchmarks,
+  loadEnrichment,
   loadElo,
   loadModels,
   loadPrices,
@@ -16,6 +17,12 @@ import type { RunOptionPrice, RunOptionVariant } from '../lib/data'
 
 const loadOverall = () => loadElo('text_overall')
 const loadCoding = () => loadElo('text_coding')
+
+const artificialAnalysisLabels = [
+  ['artificial_analysis_intelligence_index', 'Intelligence'],
+  ['artificial_analysis_coding_index', 'Coding'],
+  ['artificial_analysis_math_index', 'Math'],
+] as const
 
 function formatTokenBudget(value: number | null) {
   return value == null ? 'n/a' : value.toLocaleString()
@@ -51,6 +58,7 @@ export default function ModelDetail() {
   const { data: eloOverall } = useData(loadOverall)
   const { data: eloCoding } = useData(loadCoding)
   const { data: runOptions } = useData(loadRunOptions)
+  const { data: enrichment } = useData(loadEnrichment)
 
   const model = useMemo(
     () => models?.find((m) => m.slug === decodeURIComponent(slug)) ?? null,
@@ -131,6 +139,25 @@ export default function ModelDetail() {
   const scoreEntries = Object.entries(model.scores).sort(
     (a, b) => (b[1].score ?? 0) - (a[1].score ?? 0),
   )
+  const modelEnrichment = enrichment?.[String(model.id)] ?? null
+  const artificialRows = artificialAnalysisLabels
+    .map(([id, label]) => ({ id, label, signal: modelEnrichment?.artificialAnalysis[id] ?? null }))
+    .filter((row) => row.signal)
+  const vllmRows: Array<[string, string]> = []
+  if (modelEnrichment?.vllm.supported) {
+    vllmRows.push(['Supported', modelEnrichment.vllm.supported.value === true ? 'yes' : 'no'])
+  }
+  if (modelEnrichment?.vllm.architecture) {
+    vllmRows.push(['Architecture', String(modelEnrichment.vllm.architecture.value)])
+  }
+  if (modelEnrichment?.vllm.backend) {
+    vllmRows.push(['Backend', String(modelEnrichment.vllm.backend.value)])
+  }
+  const hasEnrichmentSignals =
+    artificialRows.length > 0 ||
+    modelEnrichment?.medianOutputTokensPerSecond != null ||
+    modelEnrichment?.medianTimeToFirstTokenSeconds != null ||
+    vllmRows.length > 0
 
   const specs: Array<[string, string]> = [
     ['Slug', model.slug],
@@ -237,6 +264,89 @@ export default function ModelDetail() {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+            <h2 className="mb-3 text-sm font-semibold text-neutral-200">Enrichment signals</h2>
+            {!hasEnrichmentSignals ? (
+              <div className="py-6 text-center text-sm text-neutral-500">
+                No enrichment signals are recorded yet.
+              </div>
+            ) : (
+              <div className="space-y-4 text-sm">
+                {artificialRows.length > 0 ? (
+                  <div>
+                    <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                      Artificial Analysis
+                    </h3>
+                    <table className="w-full">
+                      <tbody>
+                        {artificialRows.map(({ id, label, signal }) =>
+                          signal ? (
+                            <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
+                              <td className="py-1.5 text-neutral-300">{label}</td>
+                              <td className="py-1.5 text-right text-neutral-100">
+                                {Number(signal.score.toFixed(signal.score < 1 ? 3 : 1))}
+                              </td>
+                            </tr>
+                          ) : null,
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {modelEnrichment?.medianOutputTokensPerSecond ||
+                modelEnrichment?.medianTimeToFirstTokenSeconds ? (
+                  <div>
+                    <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                      Speed
+                    </h3>
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
+                      {modelEnrichment?.medianOutputTokensPerSecond ? (
+                        <div className="contents">
+                          <dt className="text-neutral-500">Output tokens/sec</dt>
+                          <dd className="text-right text-neutral-200">
+                            {Number(modelEnrichment.medianOutputTokensPerSecond.value).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 1 },
+                            )}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {modelEnrichment?.medianTimeToFirstTokenSeconds ? (
+                        <div className="contents">
+                          <dt className="text-neutral-500">TTFT</dt>
+                          <dd className="text-right text-neutral-200">
+                            {Number(modelEnrichment.medianTimeToFirstTokenSeconds.value).toLocaleString(
+                              undefined,
+                              { maximumFractionDigits: 2 },
+                            )}
+                            s
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  </div>
+                ) : null}
+
+                {vllmRows.length > 0 ? (
+                  <div>
+                    <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                      vLLM
+                    </h3>
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
+                      {vllmRows.map(([label, value]) => (
+                        <div key={label} className="contents">
+                          <dt className="text-neutral-500">{label}</dt>
+                          <dd className="text-right text-neutral-200">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ) : null}
+              </div>
             )}
           </div>
         </div>

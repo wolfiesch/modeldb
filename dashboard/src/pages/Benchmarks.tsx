@@ -7,6 +7,15 @@ import type { EChartsCoreOption } from 'echarts/core'
 
 const DEFAULT_BENCHMARK_ID = 'swe_bench_verified'
 
+const FEATURED_BENCHMARK_PRIORITY: Record<string, number> = {
+  deepswe: 0,
+  swe_bench_verified: 1,
+  lmarena_text_coding: 2,
+  aider_polyglot: 3,
+}
+
+const FEATURED_BENCHMARK_FALLBACK_PRIORITY = Object.keys(FEATURED_BENCHMARK_PRIORITY).length
+
 export default function Benchmarks() {
   const { data: benchmarks, loading, error } = useData(loadBenchmarks)
   const { data: models } = useData(loadModels)
@@ -26,6 +35,14 @@ export default function Benchmarks() {
   }, [benchId, setParams])
 
   const bench = benchmarks?.find((b) => b.id === benchId) ?? null
+  const displayBenchmarks = useMemo(() => {
+    if (!benchmarks) return []
+    return [...benchmarks].sort((a, b) => {
+      const aPriority = FEATURED_BENCHMARK_PRIORITY[a.id] ?? FEATURED_BENCHMARK_FALLBACK_PRIORITY
+      const bPriority = FEATURED_BENCHMARK_PRIORITY[b.id] ?? FEATURED_BENCHMARK_FALLBACK_PRIORITY
+      return aPriority - bPriority || a.name.localeCompare(b.name)
+    })
+  }, [benchmarks])
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
 
   // Latest result per model (results are ordered by measured_at asc).
@@ -171,24 +188,33 @@ export default function Benchmarks() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-lg font-semibold text-neutral-100">Benchmarks</h1>
-        {benchmarks.map((b) => (
+        {displayBenchmarks.map((b) => (
           <button
             key={b.id}
             onClick={() => setBenchId(b.id)}
-            className={`rounded-full border px-3 py-1 text-xs ${
+            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
               benchId === b.id
-                ? 'border-neutral-300 bg-neutral-800 text-white'
-                : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
+                ? b.id === 'deepswe'
+                  ? 'border-cyan-300 bg-cyan-950 text-cyan-50'
+                  : 'border-neutral-300 bg-neutral-800 text-white'
+                : b.id === 'deepswe'
+                  ? 'border-cyan-800 text-cyan-300 hover:border-cyan-500'
+                  : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
             }`}
           >
-            {b.name}
+            <span>{b.name}</span>
+            {b.id === 'deepswe' ? (
+              <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-[10px] uppercase tracking-wide text-cyan-300">
+                Long-horizon coding
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
       {bench && (
         <div className="text-xs text-neutral-500">
-          {bench.category ?? 'uncategorized'} · metric: {bench.metricDefault ?? '—'} ·{' '}
-          {latest.length} models{' '}
+          {bench.id === 'deepswe' ? 'long-horizon coding' : (bench.category ?? 'uncategorized')} · metric:{' '}
+          {bench.metricDefault ?? '-'} · {latest.length} models{' '}
           {bench.sourceUrl && (
             <a
               href={bench.sourceUrl}

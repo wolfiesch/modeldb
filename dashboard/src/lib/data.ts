@@ -121,6 +121,39 @@ export interface RunOptions {
   artifacts: RunOptionArtifact[]
 }
 
+export interface SourceSignal {
+  sourceSnapshotId: number | null
+  sourceId: string | null
+  fetchedAt: string | null
+  confidence?: number | null
+}
+
+export interface ArtificialAnalysisSignal extends SourceSignal {
+  score: number
+  metric: string | null
+  rank: number | null
+  selfReported: number
+  measuredAt: string | null
+}
+
+export interface CapabilitySignal extends SourceSignal {
+  value: string | number | boolean
+}
+
+export interface ModelEnrichment {
+  modelId: number
+  artificialAnalysis: Record<string, ArtificialAnalysisSignal>
+  medianOutputTokensPerSecond: CapabilitySignal | null
+  medianTimeToFirstTokenSeconds: CapabilitySignal | null
+  vllm: {
+    supported: CapabilitySignal | null
+    architecture: CapabilitySignal | null
+    backend: CapabilitySignal | null
+  }
+}
+
+export type Enrichment = Record<string, ModelEnrichment>
+
 export interface Alias {
   modelId: number | null
   sourceId: string
@@ -160,6 +193,7 @@ export const loadElo = (series: 'text_overall' | 'text_coding') =>
 export const loadPrices = () => fetchJson<ModelPrices[]>('/data/prices.json')
 export const loadAliases = () => fetchJson<Alias[]>('/data/aliases.json')
 export const loadRunOptions = () => fetchJson<RunOptions[]>('/data/run_options.json')
+export const loadEnrichment = () => fetchJson<Enrichment>('/data/enrichment.json')
 
 export function useData<T>(loader: () => Promise<T>): {
   data: T | null

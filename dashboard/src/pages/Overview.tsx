@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { loadElo, loadMeta, loadModels, useData, type Model } from '../lib/data'
+import { loadBenchmarks, loadElo, loadMeta, loadModels, useData, type BenchmarkResult, type Model } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -45,16 +45,31 @@ interface FrontierPoint {
   isFrontier: boolean
 }
 
+function formatBenchmarkScore(score: number, metric: string | null | undefined) {
+  const metricText = (metric ?? '').toLowerCase()
+  const isPercentLike =
+    metricText.includes('percent') ||
+    metricText.includes('resolved') ||
+    metricText.includes('pass') ||
+    metricText.includes('accuracy')
+
+  if (score > 0 && score <= 1 && isPercentLike) return `${(score * 100).toFixed(1)}%`
+  if (Number.isInteger(score)) return score.toLocaleString()
+  return score.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
 export default function Overview() {
   const { data: meta } = useData(loadMeta)
   const { data: models, loading, error } = useData(loadModels)
   const { data: eloHistory, loading: eloLoading, error: eloError } = useData(loadTextOverallElo)
+  const { data: benchmarks } = useData(loadBenchmarks)
   const navigate = useNavigate()
   const [devFilter, setDevFilter] = useState<string | null>(null)
   const [openOnly, setOpenOnly] = useState(false)
   const [showPareto, setShowPareto] = useState(true)
   const [scrubIndex, setScrubIndex] = useState<number | null>(null)
   const [playing, setPlaying] = useState(false)
+  const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
 
   const months = useMemo(() => {
     if (!eloHistory) return []
@@ -227,6 +242,28 @@ export default function Overview() {
     if (p.data?.meta) navigate(`/models/${encodeURIComponent(p.data.meta.slug)}`)
   })
 
+  const deepsweSignal = useMemo(() => {
+    if (!benchmarks || !models) return null
+    const deepswe = benchmarks.find((benchmark) => benchmark.id === 'deepswe')
+    if (!deepswe?.results?.length) return null
+
+    let topResult: BenchmarkResult | null = null
+    for (const result of deepswe.results) {
+      if (typeof result.modelId !== 'number' || !modelById.has(result.modelId)) continue
+      if (!topResult || result.score > topResult.score) topResult = result
+    }
+
+    if (!topResult) return null
+    const topModel = modelById.get(topResult.modelId)
+    if (!topModel) return null
+
+    return {
+      score: formatBenchmarkScore(topResult.score, topResult.metric ?? deepswe.metricDefault),
+      modelName: topModel.name,
+      modelSlug: topModel.slug,
+    }
+  }, [benchmarks, models, modelById])
+
   if (loading || eloLoading) return <div className="text-neutral-500">Loading…</div>
   if (error || eloError) return <div className="text-red-400">{error ?? eloError}</div>
   if (!models || !meta) return null
@@ -239,17 +276,46 @@ export default function Overview() {
     { label: 'Benchmark results', value: meta.counts.benchmarkResults.toLocaleString() },
     { label: 'Price points', value: meta.counts.priceComponents.toLocaleString() },
     { label: 'Data as of', value: meta.generatedAt.slice(0, 10) },
+    ...(deepsweSignal
+      ? [
+          {
+            label: 'DeepSWE',
+            value: deepsweSignal.score,
+            detail: deepsweSignal.modelName,
+            slug: deepsweSignal.modelSlug,
+          },
+        ]
+      : []),
   ]
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-            <div className="text-xl font-semibold text-neutral-100">{s.value}</div>
-            <div className="text-xs text-neutral-500">{s.label}</div>
-          </div>
-        ))}
+      <div className={`grid grid-cols-2 gap-3 ${deepsweSignal ? 'md:grid-cols-3 xl:grid-cols-6' : 'md:grid-cols-5'}`}>
+        {stats.map((s) => {
+          const slug = 'slug' in s ? s.slug : undefined
+
+          const content = (
+            <>
+              <div className="text-xl font-semibold text-neutral-100">{s.value}</div>
+              <div className="text-xs text-neutral-500">{s.label}</div>
+              {'detail' in s ? <div className="mt-1 truncate text-[11px] text-cyan-300">{s.detail}</div> : null}
+            </>
+          )
+
+          return typeof slug === 'string' && slug.length > 0 ? (
+            <button
+              key={s.label}
+              onClick={() => navigate(`/models/${encodeURIComponent(slug)}`)}
+              className="rounded-lg border border-cyan-900 bg-neutral-900 p-4 text-left hover:border-cyan-600"
+            >
+              {content}
+            </button>
+          ) : (
+            <div key={s.label} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+              {content}
+            </div>
+          )
+        })}
       </div>
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">

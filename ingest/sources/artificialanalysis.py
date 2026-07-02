@@ -1,30 +1,205 @@
-"""Artificial Analysis source parser stub."""
+"""Artificial Analysis LLM model source parser."""
 from __future__ import annotations
 
+import json
+import os
+import re
 from collections.abc import Iterator
+from typing import Any
+from urllib.request import Request, urlopen
 
 from ingest.base import SourceModelRecord, SourceParser
 
 
-class ArtificialAnalysis(SourceParser):
-    """Parser stub for the Artificial Analysis LLM models API."""
+URL = "https://artificialanalysis.ai/api/v2/data/llms/models"
+PRIMARY_API_KEY_ENV = "ARTIFICIAL_ANALYSIS_API_KEY"
+LEGACY_API_KEY_ENV = "ARTIFICIALANALYSIS_API_KEY"
+
+EVALUATION_KEYS = (
+    "artificial_analysis_intelligence_index",
+    "artificial_analysis_coding_index",
+    "artificial_analysis_math_index",
+    "mmlu_pro",
+    "gpqa",
+    "hle",
+    "livecodebench",
+    "aime",
+    "math_500",
+)
+
+PRICE_KEYS = (
+    "price_1m_input_tokens",
+    "price_1m_output_tokens",
+    "price_1m_blended_3_to_1",
+)
+
+PERFORMANCE_KEYS = (
+    "median_output_tokens_per_second",
+    "median_time_to_first_token_seconds",
+)
+
+
+class ArtificialAnalysisParser(SourceParser):
+    """Parse Artificial Analysis API rows into source-native model records."""
 
     source_id = "artificialanalysis"
-    parser_version = "0.1.0"
+    parser_version = "0.2.0"
 
     def fetch(self) -> tuple[str, bytes, dict]:
-        # TODO(M3): Read ARTIFICIALANALYSIS_API_KEY and GET with header
-        # x-api-key: <key>. Endpoint: https://artificialanalysis.ai/api/v2/data/llms/models
-        # Free plan is documented at 1000 requests/day; respect caching and cadence.
-        raise NotImplementedError("M3: needs ARTIFICIALANALYSIS_API_KEY")
+        api_key = os.environ.get(PRIMARY_API_KEY_ENV) or os.environ.get(LEGACY_API_KEY_ENV)
+        if not api_key:
+            raise NotImplementedError(
+                f"Artificial Analysis fetch requires {PRIMARY_API_KEY_ENV} "
+                f"(or legacy {LEGACY_API_KEY_ENV}) and is opt-in to avoid API quota use."
+            )
+
+        request = Request(URL, headers={"x-api-key": api_key, "Accept": "application/json"})
+        with urlopen(request) as response:
+            raw = response.read()
+            headers = response.headers
+            meta = {
+                "etag": headers.get("ETag"),
+                "last_modified": headers.get("Last-Modified"),
+            }
+            return response.geturl(), raw, meta
 
     def parse(self, raw: bytes, snapshot_id: int) -> Iterator[SourceModelRecord]:
-        """Extract id (stable UUID), slug, name, model_creator.{id,slug,name},
-        evaluations.{artificial_analysis_intelligence_index,coding_index,math_index,
-        mmlu_pro,gpqa,hle,livecodebench,aime,math_500}, pricing.{price_1m_input_tokens,
-        price_1m_output_tokens,price_1m_blended_3_to_1},
-        median_output_tokens_per_second, and median_time_to_first_token_seconds.
-        Context window should be filled only from the RSC fallback, not this API payload.
-        """
-        # TODO(M3): Normalize model rows and benchmark/price fields.
-        yield from ()
+        payload = json.loads(raw)
+        for row in _iter_rows(payload):
+            parsed_fields = _parsed_fields(row)
+            source_model_id = parsed_fields.get("id") or parsed_fields.get("slug")
+            if not source_model_id:
+                source_model_id = _slug(parsed_fields.get("name") or row.get("name"))
+            if not source_model_id:
+                continue
+
+            yield SourceModelRecord(
+                source_model_id=str(source_model_id),
+                display_name=parsed_fields.get("name"),
+                provider_name=parsed_fields.get("model_creator_name"),
+                raw_record_json=json.dumps(row, sort_keys=True),
+                parsed_fields_json=json.dumps(parsed_fields, sort_keys=True),
+            )
+
+
+def _iter_rows(payload: Any) -> Iterator[dict[str, Any]]:
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = (
+            payload.get("data")
+            or payload.get("models")
+            or payload.get("results")
+            or payload.get("items")
+            or []
+        )
+    else:
+        rows = []
+
+    if isinstance(rows, dict):
+        rows = rows.values()
+
+    for row in rows:
+        if isinstance(row, dict):
+            yield row
+
+
+def _parsed_fields(row: dict[str, Any]) -> dict[str, Any]:
+    creator = row.get("model_creator")
+    creator = creator if isinstance(creator, dict) else {}
+    evaluations = row.get("evaluations")
+    evaluations = evaluations if isinstance(evaluations, dict) else {}
+    pricing = row.get("pricing")
+    pricing = pricing if isinstance(pricing, dict) else {}
+
+    parsed: dict[str, Any] = {
+        "id": _text(row.get("id")),
+        "slug": _text(row.get("slug")),
+        "name": _text(row.get("name")),
+        "model_name": _text(row.get("name")),
+        "model_version": _model_version(row, creator),
+        "model_creator_id": _text(creator.get("id") or row.get("model_creator_id")),
+        "model_creator_slug": _text(creator.get("slug") or row.get("model_creator_slug")),
+        "model_creator_name": _text(creator.get("name") or row.get("model_creator_name")),
+    }
+
+    parsed["evaluations"] = _numeric_fields(evaluations, row, EVALUATION_KEYS)
+    parsed["pricing"] = _numeric_fields(pricing, row, PRICE_KEYS)
+
+    for key in PERFORMANCE_KEYS:
+        value = _optional_float(row.get(key))
+        if value is None:
+            value = _optional_float(_nested_lookup(row, key))
+        if value is not None:
+            parsed[key] = value
+
+    for key, value in parsed["evaluations"].items():
+        parsed[key] = value
+    for key, value in parsed["pricing"].items():
+        parsed[key] = value
+
+    return {key: value for key, value in parsed.items() if value not in (None, "", {}, [])}
+
+
+def _numeric_fields(primary: dict[str, Any], row: dict[str, Any], keys: tuple[str, ...]) -> dict[str, float]:
+    fields: dict[str, float] = {}
+    for key in keys:
+        value = _optional_float(_nested_lookup(primary, key))
+        if value is None:
+            value = _optional_float(row.get(key))
+        if value is None:
+            value = _optional_float(_nested_lookup(row, key))
+        if value is not None:
+            fields[key] = value
+    return fields
+
+
+def _nested_lookup(value: Any, key: str) -> Any:
+    if not isinstance(value, dict):
+        return None
+    if key in value:
+        return value[key]
+    for nested in value.values():
+        found = _nested_lookup(nested, key)
+        if found is not None:
+            return found
+    return None
+
+
+def _model_version(row: dict[str, Any], creator: dict[str, Any]) -> str | None:
+    name = _text(row.get("name"))
+    creator_slug = _text(creator.get("slug") or row.get("model_creator_slug"))
+    if name and creator_slug:
+        return f"{creator_slug}/{name}"
+    return name or _text(row.get("slug") or row.get("id"))
+
+
+def _text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if text.endswith("%"):
+        text = text[:-1].strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _slug(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+
+
+ArtificialAnalysis = ArtificialAnalysisParser

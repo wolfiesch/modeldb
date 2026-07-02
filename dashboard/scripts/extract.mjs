@@ -219,7 +219,110 @@ const models = q(
 }))
 writeJson('models.json', models)
 
-// --- 3. benchmarks.json -------------------------------------------------------
+// --- 3. enrichment.json -------------------------------------------------------
+const enrichmentByModel = new Map(
+  models.map((model) => [
+    model.id,
+    {
+      modelId: model.id,
+      artificialAnalysis: {},
+      medianOutputTokensPerSecond: null,
+      medianTimeToFirstTokenSeconds: null,
+      vllm: { supported: null, architecture: null, backend: null }
+    }
+  ])
+)
+
+for (const r of q(
+  `SELECT model_id AS modelId, benchmark_id AS benchmarkId, score, metric, rank,
+          self_reported AS selfReported, measured_at AS measuredAt,
+          source_snapshot_id AS sourceSnapshotId, source_id AS sourceId, fetched_at AS fetchedAt
+   FROM (
+     SELECT br.model_id, br.benchmark_id, br.score, br.metric, br.rank,
+            br.self_reported, br.measured_at, br.source_snapshot_id,
+            ss.source_id, ss.fetched_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY br.model_id, br.benchmark_id
+              ORDER BY br.measured_at DESC, br.id DESC
+            ) AS rn
+     FROM benchmark_result br
+     LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+     WHERE br.benchmark_id LIKE 'artificial_analysis_%' AND br.score IS NOT NULL
+   ) WHERE rn = 1`
+)) {
+  const entry = enrichmentByModel.get(r.modelId)
+  if (!entry) continue
+  entry.artificialAnalysis[r.benchmarkId] = {
+    score: r.score,
+    metric: r.metric,
+    rank: r.rank,
+    selfReported: r.selfReported,
+    measuredAt: r.measuredAt,
+    sourceSnapshotId: r.sourceSnapshotId,
+    sourceId: r.sourceId,
+    fetchedAt: r.fetchedAt
+  }
+}
+
+const enrichmentCapabilityMap = {
+  median_output_tokens_per_second: ['medianOutputTokensPerSecond', 'number'],
+  median_time_to_first_token_seconds: ['medianTimeToFirstTokenSeconds', 'number'],
+  vllm_supported: ['vllm.supported', 'boolean'],
+  vllm_architecture: ['vllm.architecture', 'string'],
+  vllm_backend: ['vllm.backend', 'string']
+}
+
+for (const r of q(
+  `SELECT model_id AS modelId, capability, value, confidence,
+          source_snapshot_id AS sourceSnapshotId, source_id AS sourceId, fetched_at AS fetchedAt
+   FROM (
+     SELECT mc.model_id, mc.capability, mc.value, mc.confidence, mc.source_snapshot_id,
+            ss.source_id, ss.fetched_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY mc.model_id, mc.capability
+              ORDER BY ss.fetched_at DESC, mc.source_snapshot_id DESC
+            ) AS rn
+     FROM model_capability mc
+     LEFT JOIN source_snapshot ss ON ss.id = mc.source_snapshot_id
+     WHERE mc.capability IN (
+       'median_output_tokens_per_second',
+       'median_time_to_first_token_seconds',
+       'vllm_supported',
+       'vllm_architecture',
+       'vllm_backend'
+     )
+   ) WHERE rn = 1`
+)) {
+  const entry = enrichmentByModel.get(r.modelId)
+  const config = enrichmentCapabilityMap[r.capability]
+  if (!entry || !config) continue
+
+  const [path, valueType] = config
+  const value =
+    valueType === 'number'
+      ? numberOrNull(r.value)
+      : valueType === 'boolean'
+        ? booleanOrNull(r.value)
+        : r.value
+  if (value == null) continue
+
+  const signal = {
+    value,
+    sourceSnapshotId: r.sourceSnapshotId,
+    sourceId: r.sourceId,
+    fetchedAt: r.fetchedAt,
+    confidence: r.confidence
+  }
+  if (path.startsWith('vllm.')) {
+    entry.vllm[path.slice('vllm.'.length)] = signal
+  } else {
+    entry[path] = signal
+  }
+}
+
+writeJson('enrichment.json', Object.fromEntries(enrichmentByModel))
+
+// --- 4. benchmarks.json -------------------------------------------------------
 const benchmarks = q(
   `SELECT id, name, category, metric_default AS metricDefault,
           higher_is_better AS higherIsBetter, source_url AS sourceUrl
@@ -239,7 +342,7 @@ const benchmarks = q(
 })
 writeJson('benchmarks.json', benchmarks)
 
-// --- 4. elo_*.json (columnar) --------------------------------------------------
+// --- 5. elo_*.json (columnar) --------------------------------------------------
 function emitElo(benchmarkId, filename) {
   const rows = q(
     `SELECT model_id, score, rank, measured_at
@@ -276,7 +379,7 @@ function emitElo(benchmarkId, filename) {
 emitElo('lmarena_text_overall', 'elo_text_overall.json')
 emitElo('lmarena_text_coding', 'elo_text_coding.json')
 
-// --- 5. prices.json -------------------------------------------------------------
+// --- 6. prices.json -------------------------------------------------------------
 const priceRows = q(
   `SELECT model_id, component, unit, amount,
           normalized_usd_per_1m_tokens AS usdPer1m, source_id AS sourceId,
@@ -303,7 +406,7 @@ for (const r of priceRows) {
 }
 writeJson('prices.json', [...priceByModel.values()])
 
-// --- 6. aliases.json --------------------------------------------------------------
+// --- 7. aliases.json --------------------------------------------------------------
 const aliases = q(
   `SELECT model_id AS modelId, source_id AS sourceId, alias_string AS alias,
           alias_kind AS kind, resolution_method AS method, confidence,
@@ -312,7 +415,7 @@ const aliases = q(
 )
 writeJson('aliases.json', aliases)
 
-// --- 7. run_options.json ---------------------------------------------------------
+// --- 8. run_options.json ---------------------------------------------------------
 const runOptionsByModel = new Map(models.map((m) => [m.id, { modelId: m.id, surfaces: [], artifacts: [] }]))
 
 const surfaceRows = q(
