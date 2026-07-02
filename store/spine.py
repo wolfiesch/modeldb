@@ -95,6 +95,116 @@ def find_alias_collisions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         )
     return collisions
 
+MODEL_FK_REFERENCES = (
+    ("model_alias", "model_id"),
+    ("alias_history", "model_id"),
+    ("entity_resolution_queue", "candidate_model_id"),
+    ("provider_surface", "model_id"),
+    ("model_artifact", "model_id"),
+    ("model_capability", "model_id"),
+    ("price_component", "model_id"),
+    ("benchmark_result", "model_id"),
+)
+
+
+def plan_reexport_model_merges(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Plan, but do not execute, merges from re-export canonical rows to owners.
+
+    The planner is intentionally conservative: it only proposes a merge when an
+    alias collision contains one non-re-export target for a re-export duplicate.
+    Actual FK rewrites and duplicate-row deletion belong in a separate backed-up
+    migration step.
+    """
+    plans: list[dict[str, Any]] = []
+    seen_duplicates: set[int] = set()
+    for collision in find_alias_collisions(conn):
+        models = {
+            int(alias["model_id"]): str(alias["canonical_slug"])
+            for alias in collision["aliases"]
+        }
+        targets = [
+            (model_id, slug)
+            for model_id, slug in models.items()
+            if _reexport_provider(slug) is None
+        ]
+        duplicates = [
+            (model_id, slug, provider)
+            for model_id, slug in models.items()
+            for provider in [_reexport_provider(slug)]
+            if provider is not None
+        ]
+        if len(targets) != 1:
+            continue
+        target_model_id, target_slug = targets[0]
+        for duplicate_model_id, duplicate_slug, provider in duplicates:
+            if duplicate_model_id in seen_duplicates:
+                continue
+            seen_duplicates.add(duplicate_model_id)
+            plans.append(
+                {
+                    "duplicate_model_id": duplicate_model_id,
+                    "duplicate_slug": duplicate_slug,
+                    "target_model_id": target_model_id,
+                    "target_slug": target_slug,
+                    "reexport_provider": provider,
+                    "fk_counts": _model_fk_counts(conn, duplicate_model_id),
+                    "capability_conflicts": _model_capability_conflicts(
+                        conn, duplicate_model_id, target_model_id
+                    ),
+                }
+            )
+    return plans
+
+
+def _reexport_provider(canonical_slug: str) -> str | None:
+    if "/" not in canonical_slug:
+        return None
+    provider = canonical_slug.split("/", 1)[0]
+    return provider if provider in REEXPORT_ONLY_PROVIDERS else None
+
+
+def _model_fk_counts(conn: sqlite3.Connection, model_id: int) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for table, column in MODEL_FK_REFERENCES:
+        count = conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE {column} = ?",
+            (model_id,),
+        ).fetchone()[0]
+        counts[f"{table}.{column}"] = int(count)
+    return counts
+
+
+def _model_capability_conflicts(
+    conn: sqlite3.Connection,
+    duplicate_model_id: int,
+    target_model_id: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT dup.capability, dup.source_snapshot_id,
+               dup.value AS duplicate_value, target.value AS target_value
+        FROM model_capability dup
+        JOIN model_capability target
+          ON target.model_id = ?
+         AND target.capability = dup.capability
+         AND target.source_snapshot_id = dup.source_snapshot_id
+        WHERE dup.model_id = ?
+        ORDER BY dup.capability, dup.source_snapshot_id
+        """,
+        (target_model_id, duplicate_model_id),
+    ).fetchall()
+    return [
+        {
+            "duplicate_model_id": duplicate_model_id,
+            "target_model_id": target_model_id,
+            "capability": capability,
+            "source_snapshot_id": source_snapshot_id,
+            "duplicate_value": duplicate_value,
+            "target_value": target_value,
+        }
+        for capability, source_snapshot_id, duplicate_value, target_value in rows
+    ]
+
 
 def _norm_variants(source_model_id: str) -> list[str]:
     """Normalized alias forms for a `provider/model` id: full + bare model."""
