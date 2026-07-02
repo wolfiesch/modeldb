@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import LabLogo from '../components/LabLogo'
-import { loadBenchmarks, loadElo, loadMeta, loadModels, useData, type BenchmarkResult, type Model } from '../lib/data'
+import { loadBenchmarks, loadElo, loadMeta, loadModels, useData, type Benchmark, type BenchmarkResult, type Model } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
@@ -59,6 +59,86 @@ function formatBenchmarkScore(score: number, metric: string | null | undefined) 
   return score.toLocaleString(undefined, { maximumFractionDigits: 2 })
 }
 
+const LEAGUE_CATEGORIES = [
+  { key: 'arena', label: 'Arena (ELO)' },
+  { key: 'coding', label: 'Coding' },
+  { key: 'math', label: 'Math' },
+  { key: 'reasoning', label: 'Reasoning' },
+  { key: 'agentic', label: 'Agentic' },
+  { key: 'knowledge', label: 'Knowledge' },
+] as const
+
+type LeagueCategoryKey = (typeof LEAGUE_CATEGORIES)[number]['key']
+type LeagueSortKey = 'consensus' | LeagueCategoryKey
+
+interface LeagueCell {
+  percentile: number
+  benchmarkCount: number
+}
+
+interface LeagueRow {
+  modelId: number
+  slug: string
+  name: string
+  dev: string | null
+  devName: string | null
+  consensus: number
+  categoryScores: Partial<Record<LeagueCategoryKey, LeagueCell>>
+}
+
+function latestBestResultsForBenchmark(benchmark: Benchmark) {
+  const results = benchmark.results ?? []
+  if (results.length === 0) return new Map<number, BenchmarkResult>()
+
+  let latestFetchedTime = -Infinity
+  let latestSnapshotId: number | null = null
+  for (const result of results) {
+    const fetchedTime = result.fetchedAt ? Date.parse(result.fetchedAt) : 0
+    if (fetchedTime > latestFetchedTime) {
+      latestFetchedTime = fetchedTime
+      latestSnapshotId = result.sourceSnapshotId ?? null
+    } else if (
+      fetchedTime === latestFetchedTime &&
+      result.sourceSnapshotId != null &&
+      (latestSnapshotId == null || result.sourceSnapshotId > latestSnapshotId)
+    ) {
+      latestSnapshotId = result.sourceSnapshotId
+    }
+  }
+
+  const higherIsBetter = benchmark.higherIsBetter !== 0
+  const bestByModel = new Map<number, BenchmarkResult>()
+  for (const result of results) {
+    const fetchedTime = result.fetchedAt ? Date.parse(result.fetchedAt) : 0
+    if (fetchedTime !== latestFetchedTime) continue
+    if (latestSnapshotId != null && result.sourceSnapshotId !== latestSnapshotId) {
+      continue
+    }
+
+    const existing = bestByModel.get(result.modelId)
+    if (!existing || (higherIsBetter ? result.score > existing.score : result.score < existing.score)) {
+      bestByModel.set(result.modelId, result)
+    }
+  }
+  return bestByModel
+}
+
+function percentileByModel<T>(
+  entries: Array<{ modelId: number; value: number; source: T }>,
+  higherIsBetter: boolean,
+) {
+  const sorted = [...entries].sort((a, b) => (higherIsBetter ? b.value - a.value : a.value - b.value))
+  const total = sorted.length
+  const percentiles = new Map<number, { percentile: number; source: T }>()
+  sorted.forEach((entry, index) => {
+    percentiles.set(entry.modelId, {
+      percentile: total > 1 ? (1 - index / (total - 1)) * 100 : 100,
+      source: entry.source,
+    })
+  })
+  return percentiles
+}
+
 export default function Overview() {
   const { data: meta } = useData(loadMeta)
   const { data: models, loading, error } = useData(loadModels)
@@ -70,6 +150,8 @@ export default function Overview() {
   const [showPareto, setShowPareto] = useState(true)
   const [scrubIndex, setScrubIndex] = useState<number | null>(null)
   const [playing, setPlaying] = useState(false)
+  const [leagueSortBy, setLeagueSortBy] = useState<LeagueSortKey>('consensus')
+  const [leagueLimit, setLeagueLimit] = useState<10 | 30>(10)
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
 
   const months = useMemo(() => {
@@ -169,6 +251,94 @@ export default function Overview() {
     }
     return [...seen].sort()
   }, [models])
+
+  const leagueRows = useMemo<LeagueRow[]>(() => {
+    if (!models || !benchmarks || !eloHistory) return []
+
+    const categoryTotals = new Map<number, Partial<Record<LeagueCategoryKey, { sum: number; count: number }>>>()
+    const addCategoryScore = (modelId: number, category: LeagueCategoryKey, percentile: number) => {
+      const totals = categoryTotals.get(modelId) ?? {}
+      const categoryTotal = totals[category] ?? { sum: 0, count: 0 }
+      totals[category] = { sum: categoryTotal.sum + percentile, count: categoryTotal.count + 1 }
+      categoryTotals.set(modelId, totals)
+    }
+
+    const latestEloEntries = eloHistory.series
+      .map((series) => {
+        const latestElo = series.elo.at(-1)
+        return latestElo == null ? null : { modelId: series.modelId, value: latestElo, source: latestElo }
+      })
+      .filter((entry): entry is { modelId: number; value: number; source: number } => entry != null)
+    for (const [modelId, entry] of percentileByModel(latestEloEntries, true)) {
+      addCategoryScore(modelId, 'arena', entry.percentile)
+    }
+
+    for (const benchmark of benchmarks) {
+      if (
+        benchmark.category !== 'coding' &&
+        benchmark.category !== 'math' &&
+        benchmark.category !== 'reasoning' &&
+        benchmark.category !== 'agentic' &&
+        benchmark.category !== 'knowledge'
+      ) {
+        continue
+      }
+
+      const latestBestResults = latestBestResultsForBenchmark(benchmark)
+      if (latestBestResults.size === 0) continue
+
+      const entries = [...latestBestResults.entries()].map(([modelId, result]) => ({
+        modelId,
+        value: result.score,
+        source: result,
+      }))
+      const percentiles = percentileByModel(entries, benchmark.higherIsBetter !== 0)
+      for (const [modelId, entry] of percentiles) {
+        addCategoryScore(modelId, benchmark.category, entry.percentile)
+      }
+    }
+
+    return models
+      .map((model) => {
+        const totals = categoryTotals.get(model.id)
+        if (!totals) return null
+
+        const categoryScores: Partial<Record<LeagueCategoryKey, LeagueCell>> = {}
+        const blendedPercentiles: number[] = []
+        for (const category of LEAGUE_CATEGORIES) {
+          const total = totals[category.key]
+          if (!total || total.count === 0) continue
+
+          const percentile = total.sum / total.count
+          categoryScores[category.key] = { percentile, benchmarkCount: total.count }
+          blendedPercentiles.push(percentile)
+        }
+        if (blendedPercentiles.length === 0) return null
+
+        return {
+          modelId: model.id,
+          slug: model.slug,
+          name: model.name,
+          dev: model.dev,
+          devName: model.devName,
+          consensus: blendedPercentiles.reduce((sum, value) => sum + value, 0) / blendedPercentiles.length,
+          categoryScores,
+        }
+      })
+      .filter((row): row is LeagueRow => row != null)
+  }, [models, benchmarks, eloHistory])
+
+  const displayedLeagueRows = useMemo(
+    () =>
+      [...leagueRows]
+        .sort((a, b) => {
+          const aValue = leagueSortBy === 'consensus' ? a.consensus : (a.categoryScores[leagueSortBy]?.percentile ?? -1)
+          const bValue = leagueSortBy === 'consensus' ? b.consensus : (b.categoryScores[leagueSortBy]?.percentile ?? -1)
+          return bValue - aValue || a.name.localeCompare(b.name)
+        })
+        .slice(0, leagueLimit),
+    [leagueRows, leagueSortBy, leagueLimit],
+  )
 
   const option = useMemo<EChartsCoreOption | null>(() => {
     if (points.length === 0) return null
@@ -317,6 +487,135 @@ export default function Overview() {
             </div>
           )
         })}
+      </div>
+
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-neutral-100">Category League Table</h2>
+            <p className="mt-1 max-w-3xl text-xs text-neutral-500">
+              Latest-snapshot benchmark results are collapsed to each model&apos;s best configuration, percentile-scaled per
+              benchmark, averaged by category, then blended across the scored categories.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs text-neutral-500" htmlFor="league-sort">
+              Sort
+            </label>
+            <select
+              id="league-sort"
+              value={leagueSortBy}
+              onChange={(event) => {
+                const value = event.currentTarget.value
+                if (
+                  value === 'consensus' ||
+                  value === 'arena' ||
+                  value === 'coding' ||
+                  value === 'math' ||
+                  value === 'reasoning' ||
+                  value === 'agentic' ||
+                  value === 'knowledge'
+                ) {
+                  setLeagueSortBy(value)
+                }
+              }}
+              className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-200 outline-none focus:border-neutral-500"
+            >
+              <option value="consensus">Blended Consensus</option>
+              {LEAGUE_CATEGORIES.map((category) => (
+                <option key={category.key} value={category.key}>
+                  {category.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setLeagueLimit((value) => (value === 10 ? 30 : 10))}
+              className="rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-neutral-500"
+            >
+              Show top {leagueLimit === 10 ? 30 : 10}
+            </button>
+          </div>
+        </div>
+
+        {displayedLeagueRows.length === 0 ? (
+          <div className="rounded-lg border border-neutral-800 bg-neutral-950 py-10 text-center text-sm text-neutral-500">
+            No category benchmark coverage available.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-neutral-800">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-neutral-800 bg-neutral-950 text-neutral-400">
+                  <th className="sticky left-0 z-10 min-w-56 bg-neutral-950 px-4 py-3 font-medium">Model name</th>
+                  <th className="px-3 py-3 text-center font-medium">Developer logo</th>
+                  <th className="px-3 py-3 text-right font-medium">Blended Consensus</th>
+                  {LEAGUE_CATEGORIES.map((category) => (
+                    <th key={category.key} className="min-w-24 px-3 py-3 text-right font-medium">
+                      {category.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800/60">
+                {displayedLeagueRows.map((row, index) => (
+                  <tr key={row.modelId} className="hover:bg-neutral-800/30">
+                    <td className="sticky left-0 z-10 bg-neutral-900/95 px-4 py-3">
+                      <button
+                        onClick={() => navigate(`/models/${encodeURIComponent(row.slug)}`)}
+                        className="flex max-w-56 items-center gap-2 text-left font-medium text-neutral-100 hover:text-cyan-300"
+                      >
+                        <span className="w-5 shrink-0 text-right text-[10px] text-neutral-500">#{index + 1}</span>
+                        <span className="truncate" title={row.name}>
+                          {row.name}
+                        </span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-center">
+                        <LabLogo dev={row.dev} devName={row.devName} size={22} title={row.devName ?? row.dev ?? row.name} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold text-cyan-300">
+                      {row.consensus.toFixed(1)}%
+                    </td>
+                    {LEAGUE_CATEGORIES.map((category) => {
+                      const cell = row.categoryScores[category.key]
+                      if (!cell) {
+                        return (
+                          <td key={category.key} className="px-3 py-3 text-right text-neutral-700">
+                            —
+                          </td>
+                        )
+                      }
+
+                      const tone =
+                        cell.percentile >= 85
+                          ? 'bg-emerald-950/70 text-emerald-300'
+                          : cell.percentile >= 65
+                            ? 'bg-teal-950/60 text-teal-300'
+                            : cell.percentile >= 40
+                              ? 'bg-amber-950/50 text-amber-300'
+                              : 'bg-red-950/50 text-red-300'
+
+                      return (
+                        <td
+                          key={category.key}
+                          className={`px-3 py-3 text-right font-medium ${tone}`}
+                          title={`${category.label}: ${cell.percentile.toFixed(1)} percentile average across ${
+                            cell.benchmarkCount
+                          } benchmark${cell.benchmarkCount === 1 ? '' : 's'}`}
+                        >
+                          <div>{cell.percentile.toFixed(1)}%</div>
+                          <div className="text-[10px] opacity-70">{cell.benchmarkCount} bench</div>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">

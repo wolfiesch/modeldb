@@ -5,6 +5,7 @@ import {
   loadBenchmarks,
   loadEnrichment,
   loadElo,
+  loadMeta,
   loadModels,
   loadPrices,
   loadRunOptions,
@@ -46,12 +47,62 @@ function formatTokenBudget(value: number | null) {
 
 function formatRunPrice(price: RunOptionPrice | undefined) {
   if (!price) return 'n/a'
-  if (price.usdPer1m != null) return `$${price.usdPer1m}`
+  if (price.usdPer1m != null) return `$${price.usdPer1m.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
   return `${price.amount} / ${price.unit}`
 }
 
 function priceFor(prices: RunOptionPrice[], component: string) {
-  return prices.find((price) => price.component === component)
+  return prices
+    .filter((price) => price.component === component)
+    .toSorted((a, b) => (a.usdPer1m ?? Number.POSITIVE_INFINITY) - (b.usdPer1m ?? Number.POSITIVE_INFINITY))[0]
+}
+
+function lowestPriceFor(surfaces: Array<{ prices: RunOptionPrice[] }>, component: string) {
+  const values = surfaces
+    .map((surface) => priceFor(surface.prices, component)?.usdPer1m ?? null)
+    .filter((value): value is number => value != null)
+  return values.length === 0 ? null : Math.min(...values)
+}
+
+function priceCellClass(value: number | null, lowest: number | null) {
+  return value != null && lowest != null && value === lowest
+    ? 'px-2 py-1.5 text-right font-semibold text-emerald-300'
+    : 'px-2 py-1.5 text-right text-neutral-300'
+}
+
+function routeBadge(surfaceType: string | null, providerId: string) {
+  const route = (surfaceType ?? providerId).toLowerCase()
+  if (route.includes('openrouter') || providerId === 'openrouter') {
+    return { label: 'OpenRouter', className: 'border-purple-500/40 bg-purple-500/10 text-purple-200' }
+  }
+  if (route.includes('bedrock') || providerId.includes('bedrock')) {
+    return { label: 'Bedrock', className: 'border-amber-500/40 bg-amber-500/10 text-amber-200' }
+  }
+  if (route.includes('vertex') || providerId.includes('vertex')) {
+    return { label: 'Vertex', className: 'border-sky-500/40 bg-sky-500/10 text-sky-200' }
+  }
+  if (route.includes('azure') || providerId.includes('azure')) {
+    return { label: 'Azure', className: 'border-blue-500/40 bg-blue-500/10 text-blue-200' }
+  }
+  if (route.includes('first')) {
+    return { label: 'First-party API', className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' }
+  }
+  return {
+    label: surfaceType?.replaceAll('_', ' ') ?? 'Hosted route',
+    className: 'border-neutral-700 bg-neutral-800/70 text-neutral-300',
+  }
+}
+
+function capabilityBadgeClass(enabled: boolean | null) {
+  if (enabled === true) return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+  if (enabled === false) return 'border-neutral-700 bg-neutral-950 text-neutral-500'
+  return 'border-neutral-700 bg-neutral-950 text-neutral-600'
+}
+
+function formatFreshnessDate(value: string | null | undefined) {
+  if (!value) return 'n/a'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
 
 function repoHref(artifactRef: string) {
@@ -65,6 +116,11 @@ function variantSummary(variant: RunOptionVariant) {
   return parts.length === 0 ? variant.filePattern ?? 'variant' : parts.join(' · ')
 }
 
+function hasModality(modalities: string[], modality: string) {
+  const needle = modality.toLowerCase()
+  return modalities.some((entry) => entry.toLowerCase().includes(needle))
+}
+
 export default function ModelDetail() {
   const { slug = '' } = useParams()
   const { data: models, loading } = useData(loadModels)
@@ -75,6 +131,7 @@ export default function ModelDetail() {
   const { data: eloCoding } = useData(loadCoding)
   const { data: runOptions } = useData(loadRunOptions)
   const { data: enrichment } = useData(loadEnrichment)
+  const { data: meta } = useData(loadMeta)
 
   const model = useMemo(
     () => models?.find((m) => m.slug === decodeURIComponent(slug)) ?? null,
@@ -144,6 +201,19 @@ export default function ModelDetail() {
     surfaces: [],
     artifacts: [],
   }
+  const surfaceInputFloor = lowestPriceFor(modelRunOptions.surfaces, 'input_token')
+  const surfaceOutputFloor = lowestPriceFor(modelRunOptions.surfaces, 'output_token')
+  const latestSnapshotBySource = new Map<string, { sourceName: string; fetchedAt: string }>()
+  for (const snapshot of meta?.snapshots ?? []) {
+    const current = latestSnapshotBySource.get(snapshot.sourceId)
+    if (!current || snapshot.fetchedAt > current.fetchedAt) {
+      latestSnapshotBySource.set(snapshot.sourceId, {
+        sourceName: snapshot.sourceName,
+        fetchedAt: snapshot.fetchedAt,
+      })
+    }
+  }
+  const modelModalities = [...(model.inMod ?? []), ...(model.outMod ?? [])]
   const aliasesBySource = new Map<string, typeof modelAliases>()
   for (const a of modelAliases) {
     const list = aliasesBySource.get(a.sourceId) ?? []
@@ -419,45 +489,116 @@ export default function ModelDetail() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[1180px] text-sm">
                     <thead className="text-left text-xs text-neutral-500">
                       <tr>
                         <th className="px-2 py-1.5 font-medium">Provider</th>
-                        <th className="px-2 py-1.5 font-medium">Surface</th>
+                        <th className="px-2 py-1.5 font-medium">Route map</th>
                         <th className="px-2 py-1.5 font-medium">Endpoint model id</th>
+                        <th className="px-2 py-1.5 font-medium">Capabilities</th>
+                        <th className="px-2 py-1.5 font-medium">Modalities</th>
                         <th className="px-2 py-1.5 text-right font-medium">Context</th>
                         <th className="px-2 py-1.5 text-right font-medium">Max output</th>
                         <th className="px-2 py-1.5 text-right font-medium">Input $/1M</th>
                         <th className="px-2 py-1.5 text-right font-medium">Output $/1M</th>
+                        <th className="px-2 py-1.5 font-medium">Cost freshness</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {modelRunOptions.surfaces.map((surface, i) => (
-                        <tr key={`${surface.providerId}:${surface.endpointModelId}:${i}`} className="border-t border-neutral-800/60">
-                          <td className="px-2 py-1.5 text-neutral-200">{surface.providerId}</td>
-                          <td className="px-2 py-1.5 text-neutral-400">
-                            {surface.surfaceType ?? 'n/a'}
-                            {surface.region ? (
-                              <span className="ml-1 text-[10px] text-neutral-600">{surface.region}</span>
-                            ) : null}
-                          </td>
-                          <td className="px-2 py-1.5 text-neutral-300">
-                            <code className="text-xs">{surface.endpointModelId}</code>
-                          </td>
-                          <td className="px-2 py-1.5 text-right text-neutral-300">
-                            {formatTokenBudget(surface.contextWindow)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right text-neutral-300">
-                            {formatTokenBudget(surface.maxOutput)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right text-neutral-300">
-                            {formatRunPrice(priceFor(surface.prices, 'input_token'))}
-                          </td>
-                          <td className="px-2 py-1.5 text-right text-neutral-300">
-                            {formatRunPrice(priceFor(surface.prices, 'output_token'))}
-                          </td>
-                        </tr>
-                      ))}
+                      {modelRunOptions.surfaces.map((surface, i) => {
+                        const inputPrice = priceFor(surface.prices, 'input_token')
+                        const outputPrice = priceFor(surface.prices, 'output_token')
+                        const route = routeBadge(surface.surfaceType, surface.providerId)
+                        const supportsCaching = surface.prices.some((price) => price.component.startsWith('cache_'))
+                        const sourceIds = Array.from(
+                          new Set(
+                            [surface.sourceId, ...surface.prices.map((price) => price.sourceId)].filter(
+                              (sourceId): sourceId is string => sourceId != null,
+                            ),
+                          ),
+                        )
+                        return (
+                          <tr key={`${surface.providerId}:${surface.endpointModelId}:${i}`} className="border-t border-neutral-800/60 align-top">
+                            <td className="px-2 py-2 text-neutral-200">
+                              <div className="font-medium">{surface.providerId}</div>
+                              {surface.region ? (
+                                <div className="text-[10px] uppercase tracking-wide text-neutral-600">{surface.region}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-2 text-neutral-300">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${route.className}`}>
+                                {route.label}
+                              </span>
+                              {surface.openWeights === true ? (
+                                <span className="ml-1 inline-flex rounded-full border border-neutral-700 bg-neutral-950 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+                                  open weights
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-2 text-neutral-300">
+                              <code className="text-xs">{surface.endpointModelId}</code>
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {(
+                                  [
+                                    ['Tool choice', surface.toolCall],
+                                    ['Reasoning', surface.reasoning],
+                                    ['Caching', supportsCaching],
+                                  ] satisfies Array<[string, boolean | null]>
+                                ).map(([label, enabled]) => (
+                                  <span key={label} className={`rounded-full border px-2 py-0.5 text-[10px] ${capabilityBadgeClass(enabled)}`}>
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {['Text', 'Image', 'PDF', 'Audio', 'Video'].map((modality) => {
+                                  const enabled = hasModality(modelModalities, modality)
+                                  return (
+                                    <span key={modality} className={`rounded-full border px-2 py-0.5 text-[10px] ${capabilityBadgeClass(enabled)}`}>
+                                      {modality}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 text-right text-neutral-300">
+                              {formatTokenBudget(surface.contextWindow)}
+                            </td>
+                            <td className="px-2 py-2 text-right text-neutral-300">
+                              {formatTokenBudget(surface.maxOutput)}
+                            </td>
+                            <td className={priceCellClass(inputPrice?.usdPer1m ?? null, surfaceInputFloor)}>
+                              {formatRunPrice(inputPrice)}
+                            </td>
+                            <td className={priceCellClass(outputPrice?.usdPer1m ?? null, surfaceOutputFloor)}>
+                              {formatRunPrice(outputPrice)}
+                            </td>
+                            <td className="px-2 py-2 text-xs text-neutral-400">
+                              {sourceIds.length === 0 ? (
+                                'n/a'
+                              ) : (
+                                <ul className="space-y-1">
+                                  {sourceIds.map((sourceId) => {
+                                    const snapshot = latestSnapshotBySource.get(sourceId)
+                                    return (
+                                      <li key={sourceId}>
+                                        <span className="text-neutral-300">{snapshot?.sourceName ?? sourceId}</span>
+                                        <span className="ml-1 text-neutral-600">
+                                          {formatFreshnessDate(snapshot?.fetchedAt)}
+                                        </span>
+                                      </li>
+                                    )
+                                  })}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
