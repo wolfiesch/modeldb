@@ -64,7 +64,7 @@ interface RaceRow {
   value: number
 }
 
-const STEP_MS = 180
+const STEP_MS = 800
 const TOP_N = 20
 
 const REGIMES = [
@@ -247,9 +247,30 @@ export default function Race() {
     const chart = chartInstanceRef.current
     if (!chartHost || !chart || rows.length === 0) return
     chart.resize()
-    chart.setOption(raceOption(rows, playing, regime, valueFormat), {
-      replaceMerge: playing ? ['yAxis'] : ['yAxis', 'series'],
-    })
+    if (playing) {
+      chart.setOption({
+        animationDurationUpdate: 650,
+        animationEasingUpdate: 'cubicOut',
+        xAxis: {
+          max: niceAxisMax(rows, valueFormat),
+        },
+        series: [
+          {
+            id: 'race',
+            data: rows.map((r) => ({
+              name: r.name,
+              value: r.value,
+              meta: r,
+              itemStyle: { color: colorForDark(r.dev), opacity: 0.9 },
+            })),
+          }
+        ]
+      })
+    } else {
+      chart.setOption(raceOption(rows, false, regime, valueFormat), {
+        replaceMerge: ['yAxis', 'series'],
+      })
+    }
   }, [chartHost, playing, regime, rows, valueFormat])
 
   const handleScrub = (event: ChangeEvent<HTMLInputElement>) => {
@@ -385,8 +406,8 @@ function raceOption(
 ): EChartsCoreOption {
   return {
     backgroundColor: 'transparent',
-    animationDurationUpdate: animateUpdate ? 150 : 0,
-    animationEasingUpdate: 'linear',
+    animationDurationUpdate: animateUpdate ? 650 : 0,
+    animationEasingUpdate: 'cubicOut',
     grid: { left: 170, right: 44, top: 8, bottom: 42 },
     xAxis: {
       id: 'race-x',
@@ -407,7 +428,6 @@ function raceOption(
       id: 'race-y',
       type: 'category',
       inverse: true,
-      data: rows.map((r) => r.name),
       axisLabel: { color: '#d4d4d4', fontSize: 11 },
       axisTick: { show: false },
     },
@@ -424,6 +444,7 @@ function raceOption(
         id: 'race',
         type: 'bar',
         barMaxWidth: 18,
+        realtimeSort: true,
         label: {
           show: true,
           position: 'right',
