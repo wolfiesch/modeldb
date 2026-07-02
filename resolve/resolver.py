@@ -164,6 +164,43 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) 
         "skipped": skipped,
     }
 
+def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model_id: int) -> dict[str, int]:
+    """Mark one pending review row accepted with an explicit target model."""
+
+    model = conn.execute("SELECT id FROM model WHERE id = ?", (candidate_model_id,)).fetchone()
+    if model is None:
+        raise ValueError(f"candidate model not found: {candidate_model_id}")
+
+    row = conn.execute(
+        """
+        SELECT id, status, resolved_at, candidate_model_id
+        FROM entity_resolution_queue
+        WHERE id = ?
+        """,
+        (queue_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"queue row not found: {queue_id}")
+    if row[1] != "pending" or row[2] is not None or row[3] is not None:
+        raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
+
+    cursor = conn.execute(
+        """
+        UPDATE entity_resolution_queue
+        SET candidate_model_id = ?,
+            status = 'accepted'
+        WHERE id = ?
+          AND status = 'pending'
+          AND resolved_at IS NULL
+          AND candidate_model_id IS NULL
+        """,
+        (candidate_model_id, queue_id),
+    )
+    if cursor.rowcount != 1:
+        raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
+    return {"accepted": 1, "queue_id": queue_id, "candidate_model_id": candidate_model_id}
+
+
 _QUEUE_FAMILY_SUFFIXES = (
     "non-reasoning",
     "reasoning",
@@ -609,6 +646,15 @@ def main(argv: list[str] | None = None) -> int:
             conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
+    if argv and argv[0] == "accept":
+        if len(argv) != 3:
+            print("Usage: python -m resolve.resolver accept QUEUE_ID MODEL_ID")
+            return 2
+        with connect() as conn:
+            summary = accept_queue_row(conn, queue_id=int(argv[1]), candidate_model_id=int(argv[2]))
+            conn.commit()
+        print(json.dumps(summary, sort_keys=True))
+        return 0
     if argv and argv[0] == "queue-report":
         if len(argv) > 2:
             print("Usage: python -m resolve.resolver queue-report [source_id]")
@@ -620,6 +666,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if len(argv) != 1:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
+        print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
         print("       python -m resolve.resolver drain-accepted")
         print("       python -m resolve.resolver queue-report [source_id]")
         return 2
