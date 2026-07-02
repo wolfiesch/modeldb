@@ -5,8 +5,6 @@ import { colorForDark } from '../lib/theme'
 
 const loadOverallElo = () => loadElo('text_overall')
 const MS_PER_DAY = 24 * 60 * 60 * 1000
-const INITIAL_VISIBLE_ROWS = 120
-const MORE_ROWS = 120
 
 interface TimelineRow {
   model: Model
@@ -37,7 +35,6 @@ export default function Timeline() {
   const navigate = useNavigate()
   const [devFilter, setDevFilter] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [visibleRows, setVisibleRows] = useState(INITIAL_VISIBLE_ROWS)
 
   const lastSeenByModel = useMemo(() => {
     const map = new Map<number, number>()
@@ -96,7 +93,7 @@ export default function Timeline() {
     })
   }, [allRows, devFilter, query])
 
-  const visible = filteredRows.slice(0, visibleRows)
+  const visible = filteredRows
 
   const scale = useMemo(() => {
     const rows = filteredRows.length > 0 ? filteredRows : allRows
@@ -106,7 +103,14 @@ export default function Timeline() {
     return { min, max, span }
   }, [allRows, filteredRows])
 
-  if (loading || eloLoading) return <div className="text-neutral-500">Loading…</div>
+  if (loading || eloLoading) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center space-y-4">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-800 border-t-neutral-400" />
+        <span className="text-xs text-neutral-500">Loading timeline...</span>
+      </div>
+    )
+  }
   if (error || eloError) return <div className="text-red-400">{error ?? eloError}</div>
   if (!models || !elo) return null
 
@@ -120,7 +124,6 @@ export default function Timeline() {
               key={dev}
               onClick={() => {
                 setDevFilter((cur) => (cur === dev ? null : dev))
-                setVisibleRows(INITIAL_VISIBLE_ROWS)
               }}
               className={`rounded-full border px-3 py-1 text-xs ${
                 devFilter === dev
@@ -138,7 +141,6 @@ export default function Timeline() {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
-              setVisibleRows(INITIAL_VISIBLE_ROWS)
             }}
             placeholder="Search model, developer, or family…"
             className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 outline-none focus:border-neutral-500 sm:w-96"
@@ -201,16 +203,6 @@ export default function Timeline() {
             })}
           </div>
 
-          {filteredRows.length > visible.length ? (
-            <div className="mt-4 flex justify-center">
-              <button
-                onClick={() => setVisibleRows((count) => count + MORE_ROWS)}
-                className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300 hover:border-neutral-500 hover:text-white"
-              >
-                Show more ({filteredRows.length - visible.length} remaining)
-              </button>
-            </div>
-          ) : null}
         </div>
       )}
     </div>
