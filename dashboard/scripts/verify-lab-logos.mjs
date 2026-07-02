@@ -143,23 +143,29 @@ for (const [label, manifest, raw] of [
 if (generatedManifest && typeof generatedManifest === 'object' && !Array.isArray(generatedManifest)) {
   for (const devKey of Object.keys(generatedManifest)) {
     const entry = generatedManifest[devKey]
-    const markPath = entry?.markPath ?? entry?.mark
-    if (typeof markPath !== 'string' || markPath.length === 0) {
-      fail(`generated manifest: ${devKey} is missing markPath`)
-      continue
-    }
+    const markPaths = [
+      ['markPath', entry?.markPath ?? entry?.mark],
+      ['markDarkPath', entry?.markDarkPath],
+      ['markTilePath', entry?.markTilePath],
+    ]
+    for (const [field, markPath] of markPaths) {
+      if (typeof markPath !== 'string' || markPath.length === 0) {
+        fail(`generated manifest: ${devKey} is missing ${field}`)
+        continue
+      }
 
-    const svgPath = publicAssetPath(markPath)
-    if (!svgPath || !existsSync(svgPath)) {
-      fail(`generated manifest: ${devKey} markPath does not exist: ${markPath}`)
-      continue
-    }
+      const svgPath = publicAssetPath(markPath)
+      if (!svgPath || !existsSync(svgPath)) {
+        fail(`generated manifest: ${devKey} ${field} does not exist: ${markPath}`)
+        continue
+      }
 
-    const svg = readText(svgPath, `${devKey} SVG`)
-    if (!svg) continue
-    if (!svg.trimStart().startsWith('<svg')) fail(`generated manifest: ${devKey} SVG does not start with <svg: ${markPath}`)
-    if (!svg.includes('viewBox="0 0 100 100"')) {
-      fail(`generated manifest: ${devKey} SVG missing viewBox="0 0 100 100": ${markPath}`)
+      const svg = readText(svgPath, `${devKey} ${field} SVG`)
+      if (!svg) continue
+      if (!svg.trimStart().startsWith('<svg')) fail(`generated manifest: ${devKey} ${field} SVG does not start with <svg: ${markPath}`)
+      if (!svg.includes('viewBox="0 0 100 100"')) {
+        fail(`generated manifest: ${devKey} ${field} SVG missing viewBox="0 0 100 100": ${markPath}`)
+      }
     }
   }
 }

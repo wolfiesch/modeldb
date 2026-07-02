@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="StepFun logo">
-  <g fill="#0EA5E9" transform="translate(5.0000 5.0000) scale(4.500000)">
+  <rect x="4" y="4" width="92" height="92" rx="18" fill="#f8fafc"/>
+  <g fill="#0EA5E9" transform="translate(16.0000 16.0000) scale(3.400000)">
 
   <defs>
     <style>

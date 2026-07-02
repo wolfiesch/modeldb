@@ -6,6 +6,8 @@
       "NVIDIA Research"
     ],
     "markPath": "/assets/labs/nvidia/mark.svg",
+    "markDarkPath": "/assets/labs/nvidia/mark-dark.svg",
+    "markTilePath": "/assets/labs/nvidia/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#76B900"
@@ -18,6 +20,8 @@
       "Tongyi Qianwen"
     ],
     "markPath": "/assets/labs/alibaba/mark.svg",
+    "markDarkPath": "/assets/labs/alibaba/mark-dark.svg",
+    "markTilePath": "/assets/labs/alibaba/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#FF6A00"
@@ -29,6 +33,8 @@
       "ChatGPT"
     ],
     "markPath": "/assets/labs/openai/mark.svg",
+    "markDarkPath": "/assets/labs/openai/mark-dark.svg",
+    "markTilePath": "/assets/labs/openai/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#10A37F"
@@ -39,6 +45,8 @@
       "Mistral"
     ],
     "markPath": "/assets/labs/mistral/mark.svg",
+    "markDarkPath": "/assets/labs/mistral/mark-dark.svg",
+    "markTilePath": "/assets/labs/mistral/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#FF7000"
@@ -49,6 +57,8 @@
       "Claude"
     ],
     "markPath": "/assets/labs/anthropic/mark.svg",
+    "markDarkPath": "/assets/labs/anthropic/mark-dark.svg",
+    "markTilePath": "/assets/labs/anthropic/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#D97757"
@@ -61,6 +71,8 @@
       "Gemini"
     ],
     "markPath": "/assets/labs/google/mark.svg",
+    "markDarkPath": "/assets/labs/google/mark-dark.svg",
+    "markTilePath": "/assets/labs/google/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#4285F4"
@@ -71,6 +83,8 @@
       "Cohere For AI"
     ],
     "markPath": "/assets/labs/cohere/mark.svg",
+    "markDarkPath": "/assets/labs/cohere/mark-dark.svg",
+    "markTilePath": "/assets/labs/cohere/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#39594D"
@@ -83,6 +97,8 @@
       "GLM"
     ],
     "markPath": "/assets/labs/zai/mark.svg",
+    "markDarkPath": "/assets/labs/zai/mark-dark.svg",
+    "markTilePath": "/assets/labs/zai/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#1D4ED8"
@@ -95,6 +111,8 @@
       "ChatGLM"
     ],
     "markPath": "/assets/labs/zhipuai/mark.svg",
+    "markDarkPath": "/assets/labs/zhipuai/mark-dark.svg",
+    "markTilePath": "/assets/labs/zhipuai/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#2563EB"
@@ -106,6 +124,8 @@
       "Kimi"
     ],
     "markPath": "/assets/labs/moonshotai/mark.svg",
+    "markDarkPath": "/assets/labs/moonshotai/mark-dark.svg",
+    "markTilePath": "/assets/labs/moonshotai/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#111827"
@@ -117,6 +137,8 @@
       "Grok"
     ],
     "markPath": "/assets/labs/xai/mark.svg",
+    "markDarkPath": "/assets/labs/xai/mark-dark.svg",
+    "markTilePath": "/assets/labs/xai/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#111111"
@@ -128,6 +150,8 @@
       "Meta AI"
     ],
     "markPath": "/assets/labs/llama/mark.svg",
+    "markDarkPath": "/assets/labs/llama/mark-dark.svg",
+    "markTilePath": "/assets/labs/llama/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#0668E1"
@@ -138,6 +162,8 @@
       "MiniMax AI"
     ],
     "markPath": "/assets/labs/minimax/mark.svg",
+    "markDarkPath": "/assets/labs/minimax/mark-dark.svg",
+    "markTilePath": "/assets/labs/minimax/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#7C3AED"
@@ -149,6 +175,8 @@
       "Inception"
     ],
     "markPath": "/assets/labs/inceptron/mark.svg",
+    "markDarkPath": "/assets/labs/inceptron/mark-dark.svg",
+    "markTilePath": "/assets/labs/inceptron/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#0F766E"
@@ -160,6 +188,8 @@
       "Xiaomi AI Lab"
     ],
     "markPath": "/assets/labs/xiaomi/mark.svg",
+    "markDarkPath": "/assets/labs/xiaomi/mark-dark.svg",
+    "markTilePath": "/assets/labs/xiaomi/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#FF6900"
@@ -171,6 +201,8 @@
       "阶跃星辰"
     ],
     "markPath": "/assets/labs/stepfun/mark.svg",
+    "markDarkPath": "/assets/labs/stepfun/mark-dark.svg",
+    "markTilePath": "/assets/labs/stepfun/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#0EA5E9"
@@ -181,6 +213,8 @@
       "DeepSeek AI"
     ],
     "markPath": "/assets/labs/deepseek/mark.svg",
+    "markDarkPath": "/assets/labs/deepseek/mark-dark.svg",
+    "markTilePath": "/assets/labs/deepseek/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#4D6BFE"
@@ -191,6 +225,8 @@
       "Perplexity AI"
     ],
     "markPath": "/assets/labs/perplexity/mark.svg",
+    "markDarkPath": "/assets/labs/perplexity/mark-dark.svg",
+    "markTilePath": "/assets/labs/perplexity/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#20B8CD"
@@ -201,6 +237,8 @@
       "Sakana"
     ],
     "markPath": "/assets/labs/sakana/mark.svg",
+    "markDarkPath": "/assets/labs/sakana/mark-dark.svg",
+    "markTilePath": "/assets/labs/sakana/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#EF4444"
@@ -212,6 +250,8 @@
       "Solar"
     ],
     "markPath": "/assets/labs/upstage/mark.svg",
+    "markDarkPath": "/assets/labs/upstage/mark-dark.svg",
+    "markTilePath": "/assets/labs/upstage/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#F97316"
@@ -224,6 +264,8 @@
       "Amazon"
     ],
     "markPath": "/assets/labs/nova/mark.svg",
+    "markDarkPath": "/assets/labs/nova/mark-dark.svg",
+    "markTilePath": "/assets/labs/nova/mark-tile.svg",
     "status": "needs-review",
     "sourceTier": "trusted-community",
     "color": "#FF9900"
@@ -234,6 +276,8 @@
       "Poolside AI"
     ],
     "markPath": "/assets/labs/poolside/mark.svg",
+    "markDarkPath": "/assets/labs/poolside/mark-dark.svg",
+    "markTilePath": "/assets/labs/poolside/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-site-asset",
     "color": "#14B8A6"
@@ -244,6 +288,8 @@
       "Sarvam"
     ],
     "markPath": "/assets/labs/sarvam/mark.svg",
+    "markDarkPath": "/assets/labs/sarvam/mark-dark.svg",
+    "markTilePath": "/assets/labs/sarvam/mark-tile.svg",
     "status": "active",
     "sourceTier": "official-brand-page",
     "color": "#16A34A"

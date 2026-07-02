@@ -24,7 +24,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;')
 }
 
-function markPathFor(entry) {
+function variantPathFor(entry, variant) {
+  if (variant === 'tile') return entry?.markTilePath ?? entry?.markPath ?? entry?.mark
+  if (variant === 'dark') return entry?.markDarkPath ?? entry?.markPath ?? entry?.mark
   return entry?.markPath ?? entry?.mark
 }
 
@@ -32,32 +34,44 @@ const generatedManifest = JSON.parse(readFileSync(generatedManifestPath, 'utf8')
 const labs = Object.entries(generatedManifest).map(([devKey, entry]) => ({
   devKey,
   label: entry.label ?? devKey,
-  markPath: markPathFor(entry),
+  markPath: variantPathFor(entry, 'default'),
+  markDarkPath: variantPathFor(entry, 'dark'),
+  markTilePath: variantPathFor(entry, 'tile'),
   status: entry.status ?? 'unknown',
 }))
 
 const rows = labs
   .map((lab) => {
     const previews = backgrounds
-      .map(
-        (background) => `
+      .map((background) => {
+        const variants = [
+          ['Transparent', background.key === 'dark' ? lab.markDarkPath : lab.markPath],
+          ['Tile fallback', lab.markTilePath],
+        ]
+        return `
           <section class="preview-group ${background.className}" aria-label="${escapeHtml(lab.label)} on ${background.label.toLowerCase()} background">
             <div class="preview-label">${background.label}</div>
-            <div class="sizes">
-              ${sizes
-                .map(
-                  (size) => `
-                    <figure class="logo-size">
-                      <div class="logo-frame" style="--logo-size: ${size}px">
-                        <img src="${escapeHtml(lab.markPath)}" width="${size}" height="${size}" alt="${escapeHtml(lab.label)} logo at ${size}px" loading="lazy">
-                      </div>
-                      <figcaption>${size}px</figcaption>
-                    </figure>`,
-                )
-                .join('')}
-            </div>
-          </section>`,
-      )
+            ${variants
+              .map(
+                ([variantLabel, src]) => `
+                  <div class="variant-label">${variantLabel}</div>
+                  <div class="sizes">
+                    ${sizes
+                      .map(
+                        (size) => `
+                          <figure class="logo-size">
+                            <div class="logo-frame" style="--logo-size: ${size}px">
+                              <img src="${escapeHtml(src)}" width="${size}" height="${size}" alt="${escapeHtml(lab.label)} ${variantLabel.toLowerCase()} logo at ${size}px" loading="lazy">
+                            </div>
+                            <figcaption>${size}px</figcaption>
+                          </figure>`,
+                      )
+                      .join('')}
+                  </div>`,
+              )
+              .join('')}
+          </section>`
+      })
       .join('')
 
     return `

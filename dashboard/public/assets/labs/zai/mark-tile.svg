@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Z.ai logo">
-  <g fill="#1D4ED8" transform="translate(5.0000 5.0000) scale(3.000000)">
+  <rect x="4" y="4" width="92" height="92" rx="18" fill="#f8fafc"/>
+  <g fill="#1D4ED8" transform="translate(16.0000 16.0000) scale(2.266667)">
 
 <style type="text/css">
 	.st0{opacity:0.3;fill:#E2E4E7;}

@@ -12,6 +12,7 @@ export interface LabLogoProps {
   fallback?: ReactNode
   decorative?: boolean
   title?: string
+  variant?: 'dark' | 'tile' | 'default'
 }
 
 function initialsFor(label: string): string {
@@ -31,6 +32,7 @@ export function LabLogo({
   fallback,
   decorative = false,
   title,
+  variant = 'dark',
 }: LabLogoProps) {
   const meta = getLabMeta(dev, devName)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -38,11 +40,17 @@ export function LabLogo({
   const imageIsHiddenFromA11y = decorative || showLabel
   const imageAlt = imageIsHiddenFromA11y ? '' : accessibleLabel
   const logoStyle: CSSProperties = { width: size, height: size }
-  const canRenderImage = Boolean(meta.markPath && !loadFailed)
+  const logoSrc =
+    variant === 'tile'
+      ? meta.markTilePath ?? meta.markPath
+      : variant === 'default'
+        ? meta.markPath
+        : meta.markDarkPath ?? meta.markPath
+  const canRenderImage = Boolean(logoSrc && !loadFailed)
 
   useEffect(() => {
     setLoadFailed(false)
-  }, [meta.markPath])
+  }, [logoSrc])
 
   const fallbackNode = fallback ?? initialsFor(meta.label)
 
@@ -53,7 +61,7 @@ export function LabLogo({
     >
       {canRenderImage ? (
         <img
-          src={meta.markPath}
+          src={logoSrc}
           alt={imageAlt}
           aria-hidden={imageIsHiddenFromA11y ? true : undefined}
           className={['shrink-0 object-contain', imgClassName].filter(Boolean).join(' ')}

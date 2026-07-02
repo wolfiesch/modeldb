@@ -5,6 +5,8 @@ export interface LabMeta {
   label: string
   aliases: string[]
   markPath?: string
+  markDarkPath?: string
+  markTilePath?: string
   color: string
   colorDark: string
   status: LabStatus
@@ -109,6 +111,8 @@ export const LABS: Record<string, LabMeta> = Object.fromEntries(
       label,
       aliases: [...aliases],
       markPath: `/assets/labs/${key}/mark.svg`,
+      markDarkPath: `/assets/labs/${key}/mark-dark.svg`,
+      markTilePath: `/assets/labs/${key}/mark-tile.svg`,
       color,
       colorDark: darkColor(color),
       status: 'active',
