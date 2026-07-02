@@ -4,6 +4,7 @@ from typing import Any
 
 from ingest.base import utcnow
 from store.spine import link_model
+from store.surfaces import surface_identity
 
 
 _PRICE_COLUMNS = (
@@ -68,6 +69,7 @@ def _insert_price(
     normalized: float | None,
     source_snapshot_id: int,
     valid_from: str,
+    provider_surface_id: int | None = None,
 ) -> None:
     conn.execute(
         f"""
@@ -76,7 +78,7 @@ def _insert_price(
         """,
         (
             model_id,
-            None,
+            provider_surface_id,
             source_id,
             component,
             unit,
@@ -116,10 +118,59 @@ def _openrouter_prices(parsed_fields: dict[str, Any]) -> list[tuple[str, str, fl
         prices.append((component, unit, amount, None))
     return prices
 
+def _canonical_developer(conn, model_id: int) -> str | None:
+    row = conn.execute("SELECT developer_id FROM model WHERE id = ?", (model_id,)).fetchone()
+    developer_id = row[0] if row else None
+    return developer_id if isinstance(developer_id, str) and developer_id else None
 
-def _promote_source(conn, source_id: str, price_builder) -> tuple[int, int, set[int]]:
+
+def _lookup_surface_id(
+    conn,
+    *,
+    source_id: str,
+    source_model_id: str,
+    parsed_fields: dict[str, Any],
+    model_id: int,
+) -> int | None:
+    if source_id == "openrouter":
+        candidates = [("openrouter", "openrouter", None, source_model_id)]
+    else:
+        provider_id, surface_type, region, endpoint_model_id = surface_identity(
+            source_model_id=source_model_id,
+            parsed_fields=parsed_fields,
+            canonical_developer_id=_canonical_developer(conn, model_id),
+        )
+        candidates = [
+            (provider_id, surface_type, region, endpoint_model_id),
+        ]
+
+    seen: set[tuple[str, str | None, str | None, str]] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        row = conn.execute(
+            """
+            SELECT id FROM provider_surface
+            WHERE provider_id = ?
+              AND surface_type IS ?
+              AND region IS ?
+              AND endpoint_model_id = ?
+              AND model_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (*candidate, model_id),
+        ).fetchone()
+        if row:
+            return int(row[0])
+    return None
+
+
+def _promote_source(conn, source_id: str, price_builder) -> tuple[int, int, int, set[int]]:
     inserted = 0
     unmatched = 0
+    surface_linked = 0
     models_priced: set[int] = set()
 
     for source_snapshot_id, source_model_id, parsed_fields_json in conn.execute(
@@ -140,6 +191,13 @@ def _promote_source(conn, source_id: str, price_builder) -> tuple[int, int, set[
             unmatched += 1
             continue
 
+        provider_surface_id = _lookup_surface_id(
+            conn,
+            source_id=source_id,
+            source_model_id=source_model_id,
+            parsed_fields=parsed_fields,
+            model_id=model_id,
+        )
         valid_from = utcnow()
         for component, unit, amount, normalized in prices:
             _insert_price(
@@ -152,11 +210,14 @@ def _promote_source(conn, source_id: str, price_builder) -> tuple[int, int, set[
                 normalized=normalized,
                 source_snapshot_id=source_snapshot_id,
                 valid_from=valid_from,
+                provider_surface_id=provider_surface_id,
             )
             inserted += 1
+            if provider_surface_id is not None:
+                surface_linked += 1
         models_priced.add(model_id)
 
-    return inserted, unmatched, models_priced
+    return inserted, unmatched, surface_linked, models_priced
 
 
 def promote_prices(conn) -> dict[str, int]:
@@ -165,22 +226,28 @@ def promote_prices(conn) -> dict[str, int]:
     inserted = 0
     unmatched = 0
     models_priced: set[int] = set()
+    surface_linked = 0
 
     for source_id, price_builder in (
         ("models_dev", _models_dev_prices),
         ("openrouter", _openrouter_prices),
     ):
-        source_inserted, source_unmatched, source_models_priced = _promote_source(
-            conn, source_id, price_builder
-        )
+        (
+            source_inserted,
+            source_unmatched,
+            source_surface_linked,
+            source_models_priced,
+        ) = _promote_source(conn, source_id, price_builder)
         inserted += source_inserted
         unmatched += source_unmatched
+        surface_linked += source_surface_linked
         models_priced.update(source_models_priced)
 
     return {
         "inserted": inserted,
         "unmatched": unmatched,
         "models_priced": len(models_priced),
+        "surface_linked": surface_linked,
     }
 
 

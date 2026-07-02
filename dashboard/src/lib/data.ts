@@ -73,6 +73,54 @@ export interface ModelPrices {
   rows: PriceRow[]
 }
 
+export interface RunOptionPrice {
+  component: string
+  unit: string
+  amount: number
+  usdPer1m: number | null
+  sourceId: string | null
+}
+
+export interface RunOptionSurface {
+  providerId: string
+  surfaceType: string | null
+  region: string | null
+  endpointModelId: string
+  contextWindow: number | null
+  maxOutput: number | null
+  toolCall: boolean | null
+  reasoning: boolean | null
+  openWeights: boolean | null
+  sourceId: string | null
+  prices: RunOptionPrice[]
+}
+
+export interface RunOptionVariant {
+  quantization: string | null
+  format: string | null
+  parameterCount: number | null
+  filePattern: string | null
+  sizeBytes: number | null
+}
+
+export interface RunOptionArtifact {
+  sourceId: string | null
+  artifactRef: string
+  artifactType: string | null
+  author: string | null
+  gated: string | null
+  license: string | null
+  sha: string | null
+  lastModified: string | null
+  variants: RunOptionVariant[]
+}
+
+export interface RunOptions {
+  modelId: number
+  surfaces: RunOptionSurface[]
+  artifacts: RunOptionArtifact[]
+}
+
 export interface Alias {
   modelId: number | null
   sourceId: string
@@ -111,6 +159,7 @@ export const loadElo = (series: 'text_overall' | 'text_coding') =>
   fetchJson<EloFile>(`/data/elo_${series}.json`)
 export const loadPrices = () => fetchJson<ModelPrices[]>('/data/prices.json')
 export const loadAliases = () => fetchJson<Alias[]>('/data/aliases.json')
+export const loadRunOptions = () => fetchJson<RunOptions[]>('/data/run_options.json')
 
 export function useData<T>(loader: () => Promise<T>): {
   data: T | null

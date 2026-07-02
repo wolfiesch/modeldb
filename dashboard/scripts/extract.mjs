@@ -75,6 +75,43 @@ function standardPrice(modelId, component, sourceId = 'models_dev') {
   return best
 }
 
+function parseJsonObject(text) {
+  if (!text) return {}
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function firstValue(object, keys) {
+  for (const key of keys) {
+    if (object[key] !== undefined && object[key] !== null && object[key] !== '') {
+      return object[key]
+    }
+  }
+  return null
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function booleanOrNull(value) {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1 ? true : value === 0 ? false : null
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', 'yes', '1', 'supported'].includes(normalized)) return true
+    if (['false', 'no', '0', 'unsupported'].includes(normalized)) return false
+  }
+  return null
+}
+
 function writeJson(name, value) {
   if (Array.isArray(value) && value.length === 0) {
     throw new Error(`extract: refusing to write empty array to ${name}`)
@@ -274,6 +311,128 @@ const aliases = q(
    FROM model_alias ORDER BY model_id, source_id, alias_string`
 )
 writeJson('aliases.json', aliases)
+
+// --- 7. run_options.json ---------------------------------------------------------
+const runOptionsByModel = new Map(models.map((m) => [m.id, { modelId: m.id, surfaces: [], artifacts: [] }]))
+
+const surfaceRows = q(
+  `SELECT ps.id, ps.model_id AS modelId, ps.provider_id AS providerId,
+          ps.surface_type AS surfaceType, ps.region,
+          ps.endpoint_model_id AS endpointModelId,
+          ps.metadata_json AS metadataJson, ss.source_id AS sourceId,
+          m.open_weights AS modelOpenWeights
+   FROM provider_surface ps
+   JOIN model m ON m.id = ps.model_id
+   LEFT JOIN source_snapshot ss ON ss.id = ps.source_snapshot_id
+   WHERE ps.model_id IS NOT NULL
+   ORDER BY ps.model_id, ps.provider_id, ps.surface_type, ps.region, ps.endpoint_model_id`
+)
+
+const surfaceById = new Map()
+for (const r of surfaceRows) {
+  const entry = runOptionsByModel.get(r.modelId)
+  if (!entry) continue
+
+  const metadata = parseJsonObject(r.metadataJson)
+  const surface = {
+    providerId: r.providerId,
+    surfaceType: r.surfaceType,
+    region: r.region,
+    endpointModelId: r.endpointModelId,
+    contextWindow: numberOrNull(
+      firstValue(metadata, [
+        'contextWindow',
+        'context_window',
+        'contextLength',
+        'context_length',
+        'max_input_tokens',
+        'input_limit'
+      ])
+    ),
+    maxOutput: numberOrNull(
+      firstValue(metadata, [
+        'maxOutput',
+        'max_output',
+        'max_completion_tokens',
+        'top_provider_max_completion_tokens',
+        'max_output_tokens',
+        'output_limit'
+      ])
+    ),
+    toolCall: booleanOrNull(firstValue(metadata, ['toolCall', 'tool_call', 'tools', 'supports_tools'])),
+    reasoning: booleanOrNull(firstValue(metadata, ['reasoning', 'supports_reasoning'])),
+    openWeights: booleanOrNull(firstValue(metadata, ['openWeights', 'open_weights'])) ?? booleanOrNull(r.modelOpenWeights),
+    sourceId: r.sourceId,
+    prices: []
+  }
+  entry.surfaces.push(surface)
+  surfaceById.set(r.id, surface)
+}
+
+for (const r of q(
+  `SELECT provider_surface_id AS surfaceId, component, unit, amount,
+          normalized_usd_per_1m_tokens AS usdPer1m, source_id AS sourceId
+   FROM price_component
+   WHERE provider_surface_id IS NOT NULL
+   ORDER BY provider_surface_id, component, valid_from`
+)) {
+  const surface = surfaceById.get(r.surfaceId)
+  if (!surface) continue
+  surface.prices.push({
+    component: r.component,
+    unit: r.unit,
+    amount: r.amount,
+    usdPer1m: r.usdPer1m,
+    sourceId: r.sourceId
+  })
+}
+
+const artifactById = new Map()
+for (const r of q(
+  `SELECT id, model_id AS modelId, source_id AS sourceId,
+          artifact_ref AS artifactRef, artifact_type AS artifactType,
+          author, gated, license, sha, last_modified AS lastModified
+   FROM model_artifact
+   WHERE model_id IS NOT NULL
+   ORDER BY model_id, artifact_ref`
+)) {
+  const entry = runOptionsByModel.get(r.modelId)
+  if (!entry) continue
+  const artifact = {
+    sourceId: r.sourceId,
+    artifactRef: r.artifactRef,
+    artifactType: r.artifactType,
+    author: r.author,
+    gated: r.gated,
+    license: r.license,
+    sha: r.sha,
+    lastModified: r.lastModified,
+    variants: []
+  }
+  entry.artifacts.push(artifact)
+  artifactById.set(r.id, artifact)
+}
+
+for (const r of q(
+  `SELECT artifact_id AS artifactId, quantization, format,
+          parameter_count AS parameterCount, file_pattern AS filePattern,
+          metadata_json AS metadataJson
+   FROM artifact_variant
+   ORDER BY artifact_id, quantization, format, file_pattern`
+)) {
+  const artifact = artifactById.get(r.artifactId)
+  if (!artifact) continue
+  const metadata = parseJsonObject(r.metadataJson)
+  artifact.variants.push({
+    quantization: r.quantization,
+    format: r.format,
+    parameterCount: r.parameterCount,
+    filePattern: r.filePattern,
+    sizeBytes: numberOrNull(firstValue(metadata, ['sizeBytes', 'size_bytes', 'size']))
+  })
+}
+
+writeJson('run_options.json', [...runOptionsByModel.values()])
 
 db.close()
 console.log('extract: done')

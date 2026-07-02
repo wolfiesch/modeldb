@@ -6,14 +6,41 @@ import {
   loadElo,
   loadModels,
   loadPrices,
+  loadRunOptions,
   useData,
 } from '../lib/data'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
+import type { RunOptionPrice, RunOptionVariant } from '../lib/data'
 
 const loadOverall = () => loadElo('text_overall')
 const loadCoding = () => loadElo('text_coding')
+
+function formatTokenBudget(value: number | null) {
+  return value == null ? 'n/a' : value.toLocaleString()
+}
+
+function formatRunPrice(price: RunOptionPrice | undefined) {
+  if (!price) return 'n/a'
+  if (price.usdPer1m != null) return `$${price.usdPer1m}`
+  return `${price.amount} / ${price.unit}`
+}
+
+function priceFor(prices: RunOptionPrice[], component: string) {
+  return prices.find((price) => price.component === component)
+}
+
+function repoHref(artifactRef: string) {
+  return artifactRef.includes('/') ? `https://huggingface.co/${artifactRef}` : null
+}
+
+function variantSummary(variant: RunOptionVariant) {
+  const parts = [variant.quantization, variant.format, variant.parameterCount?.toLocaleString()].filter(
+    Boolean,
+  )
+  return parts.length === 0 ? variant.filePattern ?? 'variant' : parts.join(' · ')
+}
 
 export default function ModelDetail() {
   const { slug = '' } = useParams()
@@ -23,6 +50,7 @@ export default function ModelDetail() {
   const { data: aliases } = useData(loadAliases)
   const { data: eloOverall } = useData(loadOverall)
   const { data: eloCoding } = useData(loadCoding)
+  const { data: runOptions } = useData(loadRunOptions)
 
   const model = useMemo(
     () => models?.find((m) => m.slug === decodeURIComponent(slug)) ?? null,
@@ -87,6 +115,11 @@ export default function ModelDetail() {
 
   const modelPrices = prices?.find((p) => p.modelId === model.id)?.rows ?? []
   const modelAliases = (aliases ?? []).filter((a) => a.modelId === model.id)
+  const modelRunOptions = runOptions?.find((item) => item.modelId === model.id) ?? {
+    modelId: model.id,
+    surfaces: [],
+    artifacts: [],
+  }
   const aliasesBySource = new Map<string, typeof modelAliases>()
   for (const a of modelAliases) {
     const list = aliasesBySource.get(a.sourceId) ?? []
@@ -207,6 +240,154 @@ export default function ModelDetail() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-neutral-200">Where can I run it?</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            Hosted endpoints and local weight artifacts linked to this canonical model.
+          </p>
+        </div>
+
+        {modelRunOptions.surfaces.length === 0 && modelRunOptions.artifacts.length === 0 ? (
+          <div className="rounded-md border border-neutral-800 bg-neutral-950/50 py-8 text-center text-sm text-neutral-500">
+            No hosted API surfaces or local weights are recorded yet.
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div>
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Hosted API surfaces
+              </h3>
+              {modelRunOptions.surfaces.length === 0 ? (
+                <div className="rounded-md border border-neutral-800 bg-neutral-950/50 py-5 text-center text-sm text-neutral-500">
+                  No hosted API surfaces.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs text-neutral-500">
+                      <tr>
+                        <th className="px-2 py-1.5 font-medium">Provider</th>
+                        <th className="px-2 py-1.5 font-medium">Surface</th>
+                        <th className="px-2 py-1.5 font-medium">Endpoint model id</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Context</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Max output</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Input $/1M</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Output $/1M</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modelRunOptions.surfaces.map((surface, i) => (
+                        <tr key={`${surface.providerId}:${surface.endpointModelId}:${i}`} className="border-t border-neutral-800/60">
+                          <td className="px-2 py-1.5 text-neutral-200">{surface.providerId}</td>
+                          <td className="px-2 py-1.5 text-neutral-400">
+                            {surface.surfaceType ?? 'n/a'}
+                            {surface.region ? (
+                              <span className="ml-1 text-[10px] text-neutral-600">{surface.region}</span>
+                            ) : null}
+                          </td>
+                          <td className="px-2 py-1.5 text-neutral-300">
+                            <code className="text-xs">{surface.endpointModelId}</code>
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-neutral-300">
+                            {formatTokenBudget(surface.contextWindow)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-neutral-300">
+                            {formatTokenBudget(surface.maxOutput)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-neutral-300">
+                            {formatRunPrice(priceFor(surface.prices, 'input_token'))}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-neutral-300">
+                            {formatRunPrice(priceFor(surface.prices, 'output_token'))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Local weights
+              </h3>
+              {modelRunOptions.artifacts.length === 0 ? (
+                <div className="rounded-md border border-neutral-800 bg-neutral-950/50 py-5 text-center text-sm text-neutral-500">
+                  No local weight artifacts.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs text-neutral-500">
+                      <tr>
+                        <th className="px-2 py-1.5 font-medium">Repository</th>
+                        <th className="px-2 py-1.5 font-medium">License</th>
+                        <th className="px-2 py-1.5 font-medium">Gated</th>
+                        <th className="px-2 py-1.5 font-medium">SHA</th>
+                        <th className="px-2 py-1.5 font-medium">Last modified</th>
+                        <th className="px-2 py-1.5 font-medium">Variants</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modelRunOptions.artifacts.map((artifact) => {
+                        const href = repoHref(artifact.artifactRef)
+                        return (
+                          <tr key={`${artifact.sourceId ?? 'artifact'}:${artifact.artifactRef}`} className="border-t border-neutral-800/60 align-top">
+                            <td className="px-2 py-1.5 text-neutral-200">
+                              {href ? (
+                                <a href={href} className="text-blue-400 hover:underline" target="_blank" rel="noreferrer">
+                                  {artifact.artifactRef}
+                                </a>
+                              ) : (
+                                artifact.artifactRef
+                              )}
+                              {artifact.artifactType ? (
+                                <div className="text-[10px] text-neutral-600">{artifact.artifactType}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-1.5 text-neutral-400">{artifact.license ?? 'n/a'}</td>
+                            <td className="px-2 py-1.5 text-neutral-400">{artifact.gated ?? 'n/a'}</td>
+                            <td className="px-2 py-1.5 text-neutral-400">
+                              {artifact.sha ? <code className="text-xs">{artifact.sha.slice(0, 12)}</code> : 'n/a'}
+                            </td>
+                            <td className="px-2 py-1.5 text-neutral-400">{artifact.lastModified ?? 'n/a'}</td>
+                            <td className="px-2 py-1.5 text-neutral-300">
+                              {artifact.variants.length === 0 ? (
+                                'n/a'
+                              ) : (
+                                <ul className="space-y-1">
+                                  {artifact.variants.slice(0, 3).map((variant, i) => (
+                                    <li key={`${variant.filePattern ?? variantSummary(variant)}:${i}`}>
+                                      {variantSummary(variant)}
+                                      {variant.sizeBytes != null ? (
+                                        <span className="ml-1 text-[10px] text-neutral-600">
+                                          {variant.sizeBytes.toLocaleString()} bytes
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                  {artifact.variants.length > 3 ? (
+                                    <li className="text-[10px] text-neutral-600">
+                                      +{artifact.variants.length - 3} more
+                                    </li>
+                                  ) : null}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
