@@ -29,9 +29,71 @@ from resolve.normalize import canonical_org, extract_modifiers, normalize_alias
 FIRST_PARTY_PROVIDERS = {
     "anthropic", "openai", "google", "xai", "meta", "llama", "mistral",
     "deepseek", "alibaba", "zhipuai", "zai", "moonshotai", "minimax",
-    "cohere", "perplexity", "stepfun", "upstage", "xiaomi", "nvidia",
-    "sarvam", "baidu", "tencent", "inceptron", "poolside", "sakana", "nova",
+    "cohere", "perplexity", "stepfun", "upstage", "xiaomi",
+    "sarvam", "baidu", "tencent", "poolside", "sakana", "nova",
 }
+
+# models.dev also lists re-export namespaces that mirror other developers'
+# models. They are useful source facts, but they must not mint canonical rows.
+REEXPORT_ONLY_PROVIDERS = {"nvidia", "inceptron"}
+
+
+def is_first_party_provider(provider_id: str) -> bool:
+    """Return whether a models.dev provider id can mint canonical model rows."""
+    provider = canonical_org(provider_id)
+    return provider in FIRST_PARTY_PROVIDERS and provider not in REEXPORT_ONLY_PROVIDERS
+
+
+def find_alias_collisions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Report normalized aliases linked to more than one canonical model.
+
+    This is intentionally read-only. Existing duplicate rows need an explicit
+    backed-up FK migration step after the report has been reviewed.
+    """
+    aliases = conn.execute(
+        """
+        SELECT alias_normalized
+        FROM model_alias
+        WHERE model_id IS NOT NULL
+        GROUP BY alias_normalized
+        HAVING COUNT(DISTINCT model_id) > 1
+        ORDER BY alias_normalized
+        """
+    ).fetchall()
+    collisions: list[dict[str, Any]] = []
+    for (alias_normalized,) in aliases:
+        details = conn.execute(
+            """
+            SELECT DISTINCT ma.model_id, m.canonical_slug, ma.source_id,
+                            ma.alias_string, ma.alias_kind, ma.confidence
+            FROM model_alias ma
+            JOIN model m ON m.id = ma.model_id
+            WHERE ma.alias_normalized = ? AND ma.model_id IS NOT NULL
+            ORDER BY m.canonical_slug, ma.model_id, ma.source_id, ma.alias_kind, ma.alias_string
+            """,
+            (alias_normalized,),
+        ).fetchall()
+        model_ids = sorted({int(row[0]) for row in details})
+        canonical_slugs = sorted({str(row[1]) for row in details})
+        collisions.append(
+            {
+                "alias_normalized": alias_normalized,
+                "model_ids": model_ids,
+                "canonical_slugs": canonical_slugs,
+                "aliases": [
+                    {
+                        "model_id": int(model_id),
+                        "canonical_slug": canonical_slug,
+                        "source_id": source_id,
+                        "alias_string": alias_string,
+                        "alias_kind": alias_kind,
+                        "confidence": confidence,
+                    }
+                    for model_id, canonical_slug, source_id, alias_string, alias_kind, confidence in details
+                ],
+            }
+        )
+    return collisions
 
 
 def _norm_variants(source_model_id: str) -> list[str]:
@@ -130,7 +192,7 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
     aliases_created = 0
     for source_model_id, display_name, parsed_json in rows:
         provider_id = source_model_id.split("/", 1)[0]
-        if provider_id not in FIRST_PARTY_PROVIDERS:
+        if not is_first_party_provider(provider_id):
             continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
 
@@ -173,8 +235,35 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
                 alias_normalized=normalize_alias(alias_str), alias_kind=kind,
                 model_id=model_id, method="exact_provider_doc", confidence=1.0, now=now,
             )
+
+    reexport_aliases_created = 0
+    for source_model_id, _display_name, parsed_json in rows:
+        provider_id = source_model_id.split("/", 1)[0]
+        if provider_id not in REEXPORT_ONLY_PROVIDERS or "/" not in source_model_id:
+            continue
+        pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
+        target_model_id = source_model_id.split("/", 1)[1]
+        model_id = link_model(
+            conn,
+            source_id="models_dev",
+            source_model_id=target_model_id,
+            parsed_fields=pf,
+        )
+        if model_id is None:
+            continue
+        created = _write_alias(
+            conn, source_id="models_dev", alias_string=source_model_id,
+            alias_normalized=normalize_alias(source_model_id), alias_kind="reexport_id",
+            model_id=model_id, method="reexport_normalized_match", confidence=0.85, now=now,
+        )
+        reexport_aliases_created += created
+        aliases_created += created
     conn.commit()
-    return {"models_created": models_created, "aliases_created": aliases_created}
+    return {
+        "models_created": models_created,
+        "aliases_created": aliases_created,
+        "reexport_aliases_created": reexport_aliases_created,
+    }
 
 
 def bridge_openrouter_aliases(conn: sqlite3.Connection) -> dict[str, int]:
