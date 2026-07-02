@@ -23,11 +23,14 @@ from store.artifacts import fetch_huggingface_records, promote_artifacts
 from store.openrouter_endpoints import promote_openrouter_endpoints
 from store.prices import promote_prices
 from store.benchmarks import promote_benchmarks
+from store.external_benchmarks import promote_external_benchmarks
+from store.open_llm_lb import promote_open_llm_lb
+from store.mteb import promote_mteb
 from store.arena import promote_arena
 from store.capabilities import promote_capabilities
 from store.announcement import capture_announcement, SONNET5_EVIDENCE
 
-M1_SOURCES = ("models_dev", "openrouter", "epoch", "lmarena")
+M1_SOURCES = ("models_dev", "openrouter", "epoch", "lmarena", "swebench", "aider", "open_llm_lb")
 
 
 def run_pipeline(
@@ -66,6 +69,9 @@ def run_pipeline(
         summary["capabilities"] = promote_capabilities(conn)
         summary["benchmarks"] = promote_benchmarks(conn)
         summary["arena"] = promote_arena(conn)
+        summary["external_benchmarks"] = promote_external_benchmarks(conn)
+        summary["open_llm_lb"] = promote_open_llm_lb(conn)
+        summary["mteb"] = promote_mteb(conn)
         conn.commit()
     return summary
 

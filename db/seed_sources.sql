@@ -18,6 +18,7 @@ INSERT OR REPLACE INTO source (id, name, base_url, ingestion_class, auth_type, u
 ('aider',        'Aider polyglot leaderboard', 'https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data/polyglot_leaderboard.yml', 'A', 'none', 'maintained', 'Code-editing pass_rate_2 = displayed score. command field carries provider/model route.'),
 ('livebench',    'LiveBench',                  'https://huggingface.co/datasets/livebench/model_judgment',                   'A', 'none',    'periodic',     'Per-question judgments parquet (coding/math/reasoning/IF/language/data_analysis). Verify HF lastModified vs repo release list for freshness.'),
 ('open_llm_lb',  'HF Open LLM Leaderboard (archived)', 'https://huggingface.co/api/datasets/open-llm-leaderboard/contents',    'A', 'none',    'FROZEN 2025-03', 'Archived open-model baselines: IFEval, BBH, MATH-L5, GPQA, MUSR, MMLU-PRO. Historical only.'),
+('mteb',        'MTEB results leaderboard',    'https://huggingface.co/datasets/mteb/results',                              'A', 'none',    'continuous',   'Official HF MTEB results dataset. Live source is parquet shards; stdlib parser accepts caller-supplied JSON/CSV aggregate leaderboard rows.'),
 
 -- Provider first-party APIs (auth, official truth, sparse-to-rich)
 ('anthropic_api','Anthropic Models API',       'https://api.anthropic.com/v1/models',                                        'A', 'api_key', 'on-release',   'id, display_name, created_at, max_input/max_tokens, rich capabilities. No price. anthropic-version header.'),

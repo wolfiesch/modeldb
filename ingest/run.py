@@ -38,6 +38,7 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
     ParserSpec("aider", "ingest.sources.aider", "AiderParser"),
     ParserSpec("livebench", "ingest.sources.livebench", "LiveBenchParser"),
     ParserSpec("open_llm_lb", "ingest.sources.open_llm_lb", "OpenLLMLBParser"),
+    ParserSpec("mteb", "ingest.sources.mteb", "MTEBParser"),
     ParserSpec("anthropic_api", "ingest.sources.anthropic_api", "AnthropicAPIParser"),
     ParserSpec("openai_api", "ingest.sources.openai_api", "OpenAIAPIParser"),
     ParserSpec("gemini_api", "ingest.sources.gemini_api", "GeminiAPIParser"),
@@ -47,6 +48,11 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
     ParserSpec("lmarena_mirror", "ingest.sources.lmarena_mirror", "LMArenaMirrorParser"),
     ParserSpec("scale_seal", "ingest.sources.scale_seal", "ScaleSEALParser"),
 )
+
+# Live MTEB results are official HF parquet shards. Keep the parser discoverable
+# for explicit aggregate JSON/CSV imports, but do not include it in the default
+# stdlib-only `all` run.
+EXCLUDE_FROM_ALL = {"mteb"}
 
 
 class ParserUnavailable(RuntimeError):
@@ -101,7 +107,11 @@ def run_source(source_id: str, parser_cls: type[SourceParser], conn: sqlite3.Con
 
 def iter_requested(source_id: str, registry: dict[str, type[SourceParser]]) -> Iterable[str]:
     if source_id == "all":
-        return (spec.source_id for spec in PARSER_SPECS if spec.source_id in registry)
+        return (
+            spec.source_id
+            for spec in PARSER_SPECS
+            if spec.source_id in registry and spec.source_id not in EXCLUDE_FROM_ALL
+        )
     return (source_id,)
 
 
