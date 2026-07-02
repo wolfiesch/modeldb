@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from ingest.base import utcnow
@@ -156,6 +157,94 @@ def plan_reexport_model_merges(conn: sqlite3.Connection) -> list[dict[str, Any]]
     return plans
 
 
+def apply_reexport_model_merges(
+    conn: sqlite3.Connection,
+    *,
+    backup_path: str | None = None,
+    allow_test_memory_backup: bool = False,
+    allow_identical_capability_conflicts: bool = False,
+) -> dict[str, Any]:
+    """Apply re-export duplicate merge plans after concrete backup validation."""
+    plans = plan_reexport_model_merges(conn)
+    summary: dict[str, Any] = {
+        "applied_count": 0,
+        "fk_counts": {},
+        "deleted_models": 0,
+        "collapsed_capability_conflicts": 0,
+    }
+    if not plans:
+        return summary
+    if not allow_test_memory_backup:
+        if backup_path is None:
+            raise RuntimeError("Refusing to apply re-export model merges without a backup path.")
+        backup = Path(backup_path)
+        if not backup.exists() or not backup.is_file() or backup.stat().st_size <= 0:
+            raise RuntimeError("Refusing to apply re-export model merges without an existing backup path.")
+
+    for plan in plans:
+        conflicts = plan["capability_conflicts"]
+        differing = [
+            conflict for conflict in conflicts
+            if (
+                conflict["duplicate_value"] != conflict["target_value"]
+                or conflict["duplicate_confidence"] != conflict["target_confidence"]
+            )
+        ]
+        if differing:
+            raise RuntimeError("Refusing to merge differing model capability confidence or values.")
+        if conflicts and not allow_identical_capability_conflicts:
+            raise RuntimeError("Refusing to merge model capability conflicts without explicit allowance.")
+
+    with conn:
+        for plan in plans:
+            duplicate_model_id = int(plan["duplicate_model_id"])
+            target_model_id = int(plan["target_model_id"])
+
+            for conflict in plan["capability_conflicts"]:
+                deleted = conn.execute(
+                    """
+                    DELETE FROM model_capability
+                    WHERE model_id = ?
+                      AND capability = ?
+                      AND source_snapshot_id = ?
+                    """,
+                    (
+                        duplicate_model_id,
+                        conflict["capability"],
+                        conflict["source_snapshot_id"],
+                    ),
+                ).rowcount
+                summary["collapsed_capability_conflicts"] += deleted
+
+            for table, column in MODEL_FK_REFERENCES:
+                changed = conn.execute(
+                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?",
+                    (target_model_id, duplicate_model_id),
+                ).rowcount
+                key = f"{table}.{column}"
+                planned = int(plan["fk_counts"].get(key, changed))
+                summary["fk_counts"][key] = summary["fk_counts"].get(key, 0) + planned
+
+            remaining = {
+                key: count
+                for key, count in _model_fk_counts(conn, duplicate_model_id).items()
+                if count
+            }
+            if remaining:
+                raise RuntimeError(f"Refusing to delete model with remaining references: {remaining}")
+
+            deleted_model = conn.execute(
+                "DELETE FROM model WHERE id = ?",
+                (duplicate_model_id,),
+            ).rowcount
+            if deleted_model != 1:
+                raise RuntimeError("Expected to delete exactly one duplicate model row.")
+            summary["deleted_models"] += deleted_model
+            summary["applied_count"] += 1
+
+    return summary
+
+
 def _reexport_provider(canonical_slug: str) -> str | None:
     if "/" not in canonical_slug:
         return None
@@ -182,7 +271,9 @@ def _model_capability_conflicts(
     rows = conn.execute(
         """
         SELECT dup.capability, dup.source_snapshot_id,
-               dup.value AS duplicate_value, target.value AS target_value
+               dup.value AS duplicate_value, target.value AS target_value,
+               dup.confidence AS duplicate_confidence,
+               target.confidence AS target_confidence
         FROM model_capability dup
         JOIN model_capability target
           ON target.model_id = ?
@@ -201,8 +292,17 @@ def _model_capability_conflicts(
             "source_snapshot_id": source_snapshot_id,
             "duplicate_value": duplicate_value,
             "target_value": target_value,
+            "duplicate_confidence": duplicate_confidence,
+            "target_confidence": target_confidence,
         }
-        for capability, source_snapshot_id, duplicate_value, target_value in rows
+        for (
+            capability,
+            source_snapshot_id,
+            duplicate_value,
+            target_value,
+            duplicate_confidence,
+            target_confidence,
+        ) in rows
     ]
 
 

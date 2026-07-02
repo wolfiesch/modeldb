@@ -283,6 +283,23 @@ class SpineReexportMigrationPlanTests(unittest.TestCase):
             ).fetchall(),
         }
 
+    def _snapshot_state(self) -> dict[str, object]:
+        return {
+            "row_counts": self._row_counts(),
+            "direct_model_fk_values": self._direct_model_fk_values(),
+            "model_ids": self.conn.execute("SELECT id FROM model ORDER BY id").fetchall(),
+            "capabilities": self.conn.execute(
+                """
+                SELECT model_id, capability, source_snapshot_id, value, confidence
+                FROM model_capability
+                ORDER BY model_id, capability, source_snapshot_id
+                """
+            ).fetchall(),
+        }
+
+    def _assert_state_unchanged(self, before: dict[str, object]) -> None:
+        self.assertEqual(self._snapshot_state(), before)
+
     def test_reexport_merge_plan_reports_all_fk_counts_capability_conflicts_and_is_read_only(
         self,
     ) -> None:
@@ -320,6 +337,8 @@ class SpineReexportMigrationPlanTests(unittest.TestCase):
                 "source_snapshot_id": conflict.get("source_snapshot_id"),
                 "duplicate_value": conflict.get("duplicate_value"),
                 "target_value": conflict.get("target_value"),
+                "duplicate_confidence": conflict.get("duplicate_confidence"),
+                "target_confidence": conflict.get("target_confidence"),
             }
             for conflict in plan["capability_conflicts"]
         ]
@@ -331,6 +350,8 @@ class SpineReexportMigrationPlanTests(unittest.TestCase):
                 "source_snapshot_id": 1,
                 "duplicate_value": "128000",
                 "target_value": "128000",
+                "duplicate_confidence": 1.0,
+                "target_confidence": 1.0,
             },
             capability_conflicts,
         )
@@ -354,6 +375,134 @@ class SpineReexportMigrationPlanTests(unittest.TestCase):
         )
 
         self.assertEqual(spine.plan_reexport_model_merges(self.conn), [])
+
+    def test_apply_reexport_model_merges_requires_backup_evidence_before_mutating(self) -> None:
+        self._seed_reexport_duplicate_with_all_fk_surfaces()
+        before = self._snapshot_state()
+
+        with self.assertRaisesRegex(RuntimeError, "backup"):
+            spine.apply_reexport_model_merges(self.conn)
+
+        self._assert_state_unchanged(before)
+
+    def test_apply_reexport_model_merges_rejects_nonexistent_backup_path_before_mutating(
+        self,
+    ) -> None:
+        self._seed_reexport_duplicate_with_all_fk_surfaces()
+        before = self._snapshot_state()
+
+        missing_backup_path = Path(f"missing-spine-migration-backup-{id(self)}.sqlite3")
+        self.assertFalse(missing_backup_path.exists())
+
+        with self.assertRaisesRegex(RuntimeError, "(?i)(backup.*path|path.*backup)"):
+            spine.apply_reexport_model_merges(
+                self.conn,
+                backup_path=str(missing_backup_path),
+            )
+
+        self._assert_state_unchanged(before)
+
+    def test_apply_reexport_model_merges_requires_explicit_capability_conflict_allowance(
+        self,
+    ) -> None:
+        self._seed_reexport_duplicate_with_all_fk_surfaces()
+        before = self._snapshot_state()
+
+        with self.assertRaisesRegex(RuntimeError, "capability"):
+            spine.apply_reexport_model_merges(
+                self.conn,
+                allow_test_memory_backup=True,
+            )
+
+        self._assert_state_unchanged(before)
+
+    def test_apply_reexport_model_merges_rejects_same_value_different_confidence_conflicts(
+        self,
+    ) -> None:
+        self._seed_reexport_duplicate_with_all_fk_surfaces()
+        self.conn.execute(
+            """
+            UPDATE model_capability
+            SET confidence = 0.75
+            WHERE model_id = 2
+              AND capability = 'context_window'
+              AND source_snapshot_id = 1
+            """
+        )
+        before = self._snapshot_state()
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "(?i)(capability.*confidence|confidence.*capability)",
+        ):
+            spine.apply_reexport_model_merges(
+                self.conn,
+                allow_test_memory_backup=True,
+                allow_identical_capability_conflicts=True,
+            )
+
+        self._assert_state_unchanged(before)
+
+
+    def test_apply_reexport_model_merges_rewrites_all_fk_surfaces_and_merges_identical_capability_conflicts(
+        self,
+    ) -> None:
+        self._seed_reexport_duplicate_with_all_fk_surfaces()
+
+        summary = spine.apply_reexport_model_merges(
+            self.conn,
+            allow_test_memory_backup=True,
+            allow_identical_capability_conflicts=True,
+        )
+
+        self.assertEqual(summary["applied_count"], 1)
+        self.assertEqual(
+            summary["fk_counts"],
+            {
+                "model_alias.model_id": 1,
+                "alias_history.model_id": 1,
+                "entity_resolution_queue.candidate_model_id": 1,
+                "provider_surface.model_id": 1,
+                "model_artifact.model_id": 1,
+                "model_capability.model_id": 1,
+                "price_component.model_id": 1,
+                "benchmark_result.model_id": 1,
+            },
+        )
+        self.assertEqual(self.conn.execute("SELECT id FROM model ORDER BY id").fetchall(), [(1,)])
+        self.assertEqual(
+            self._direct_model_fk_values(),
+            {
+                "model_alias.model_id": [(1, 1), (2, 1)],
+                "alias_history.model_id": [(1, 1)],
+                "entity_resolution_queue.candidate_model_id": [(1, 1)],
+                "provider_surface.model_id": [(1, 1)],
+                "model_artifact.model_id": [(1, 1)],
+                "model_capability.model_id": [(1, "context_window", 1, "128000")],
+                "price_component.model_id": [(1, 1)],
+                "benchmark_result.model_id": [(1, 1)],
+            },
+        )
+        self.assertEqual(
+            self.conn.execute(
+                """
+                SELECT model_id, capability, source_snapshot_id, value, confidence
+                FROM model_capability
+                ORDER BY model_id, capability, source_snapshot_id
+                """
+            ).fetchall(),
+            [(1, "context_window", 1, "128000", 1.0)],
+        )
+
+    def test_apply_reexport_model_merges_noops_without_backup_when_no_plans_exist(self) -> None:
+        self._insert_model(1, "deepseek/deepseek-v4-flash")
+        before = self._snapshot_state()
+
+        summary = spine.apply_reexport_model_merges(self.conn)
+
+        self.assertEqual(summary["applied_count"], 0)
+        self.assertEqual(summary["fk_counts"], {})
+        self._assert_state_unchanged(before)
 
 
 if __name__ == "__main__":
