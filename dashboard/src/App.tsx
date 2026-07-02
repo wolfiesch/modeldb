@@ -10,6 +10,8 @@ import Race from './pages/Race'
 import Compare from './pages/Compare'
 import Timeline from './pages/Timeline'
 import DevPage from './pages/DevPage'
+import Consensus from './pages/Consensus'
+import QualityLatencyPrice from './pages/QualityLatencyPrice'
 import CommandPalette from './components/CommandPalette'
 
 const NAV = [
@@ -17,6 +19,8 @@ const NAV = [
   { to: '/models', label: 'Model Explorer' },
   { to: '/elo', label: 'Arena over time' },
   { to: '/race', label: 'Leaderboard race' },
+  { to: '/consensus', label: 'Consensus matrix' },
+  { to: '/efficiency', label: 'Speed vs Quality' },
   { to: '/benchmarks', label: 'Benchmarks' },
   { to: '/compare', label: 'Compare' },
   { to: '/timeline', label: 'Timeline' },
@@ -84,6 +88,8 @@ export default function App() {
             <Route path="/compare" element={<Compare />} />
             <Route path="/timeline" element={<Timeline />} />
             <Route path="/devs/:dev" element={<DevPage />} />
+            <Route path="/consensus" element={<Consensus />} />
+            <Route path="/efficiency" element={<QualityLatencyPrice />} />
             <Route
               path="*"
               element={<div className="text-neutral-400">Page not found.</div>}

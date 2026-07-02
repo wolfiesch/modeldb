@@ -8,6 +8,8 @@ const PAGES = [
   { label: 'Model Explorer', path: '/models' },
   { label: 'Arena over time', path: '/elo' },
   { label: 'Leaderboard race', path: '/race' },
+  { label: 'Consensus matrix', path: '/consensus' },
+  { label: 'Speed vs Quality', path: '/efficiency' },
   { label: 'Benchmarks', path: '/benchmarks' },
   { label: 'Compare', path: '/compare' },
   { label: 'Timeline', path: '/timeline' },

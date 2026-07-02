@@ -40,6 +40,12 @@ export interface BenchmarkResult {
   rank: number | null
   selfReported: number
   measuredAt: string | null
+  sourceId?: string | null
+  sourceSnapshotId?: number | null
+  fetchedAt?: string | null
+  ci?: number | null
+  votes?: number | null
+  evalCondition?: Record<string, unknown> | null
 }
 
 export interface Benchmark {
@@ -55,6 +61,18 @@ export interface Benchmark {
 export interface EloFile {
   models: Array<{ id: number; slug: string; dev: string | null }>
   series: Array<{ modelId: number; t: number[]; elo: number[]; rank: Array<number | null> }>
+}
+
+export interface BenchmarkTimeseriesSeries {
+  modelId: number
+  t: number[]
+  score: number[]
+  rank: Array<number | null>
+}
+
+export interface BenchmarkTimeseriesFile {
+  models: Array<{ id: number; slug: string; dev: string | null }>
+  series: BenchmarkTimeseriesSeries[]
 }
 
 export interface PriceRow {
@@ -196,6 +214,8 @@ export const loadPrices = () => fetchJson<ModelPrices[]>('/data/prices.json')
 export const loadAliases = () => fetchJson<Alias[]>('/data/aliases.json')
 export const loadRunOptions = () => fetchJson<RunOptions[]>('/data/run_options.json')
 export const loadEnrichment = () => fetchJson<Enrichment>('/data/enrichment.json')
+export const loadBenchmarkTimeseries = () =>
+  fetchJson<Record<string, BenchmarkTimeseriesFile>>('/data/benchmark_timeseries.json')
 
 export function useData<T>(loader: () => Promise<T>): {
   data: T | null

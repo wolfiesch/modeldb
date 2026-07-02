@@ -147,10 +147,34 @@ for (const r of q(
 )) {
   capMax.set(`${r.model_id}:${r.capability}`, r.v)
 }
-const capAny = new Map() // `${modelId}:${cap}` -> one value
+const capAny = new Map() // `${modelId}:${cap}` -> selected modality value
 for (const r of q(
-  `SELECT model_id, capability, value FROM model_capability
-   WHERE capability IN ('input_modalities','output_modalities')`
+  `WITH latest_snapshot AS (
+     SELECT source_id, MAX(id) AS snapshot_id
+     FROM source_snapshot
+     GROUP BY source_id
+   ),
+   ranked AS (
+     SELECT mc.model_id, mc.capability, mc.value,
+            ROW_NUMBER() OVER (
+              PARTITION BY mc.model_id, mc.capability
+              ORDER BY
+                CASE ss.source_id
+                  WHEN 'models_dev' THEN 3
+                  WHEN 'openrouter' THEN 2
+                  WHEN 'huggingface' THEN 1
+                  ELSE 0
+                END DESC,
+                COALESCE(mc.confidence, 0) DESC,
+                ss.fetched_at DESC,
+                ss.id DESC
+            ) AS rn
+     FROM model_capability mc
+     JOIN source_snapshot ss ON ss.id = mc.source_snapshot_id
+     JOIN latest_snapshot ls ON ls.source_id = ss.source_id AND ls.snapshot_id = ss.id
+     WHERE mc.capability IN ('input_modalities','output_modalities')
+   )
+   SELECT model_id, capability, value FROM ranked WHERE rn = 1`
 )) {
   capAny.set(`${r.model_id}:${r.capability}`, r.value)
 }
@@ -358,16 +382,75 @@ const benchmarks = q(
   const results = b.id.startsWith('lmarena_')
     ? undefined
     : q(
-        `SELECT model_id AS modelId, score, metric, rank,
-                self_reported AS selfReported, measured_at AS measuredAt
-         FROM benchmark_result
-         WHERE benchmark_id = ? AND score IS NOT NULL
-         ORDER BY measured_at`,
+        `SELECT br.model_id AS modelId, br.score, br.metric, br.rank,
+                br.self_reported AS selfReported, br.measured_at AS measuredAt,
+                ss.source_id AS sourceId, br.source_snapshot_id AS sourceSnapshotId,
+                ss.fetched_at AS fetchedAt, br.ci, br.votes,
+                br.eval_condition_json AS evalCondition
+         FROM benchmark_result br
+         LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+         WHERE br.benchmark_id = ? AND br.score IS NOT NULL
+         ORDER BY br.measured_at`,
         [b.id]
-      )
+      ).map((r) => ({
+        ...r,
+        evalCondition: r.evalCondition ? JSON.parse(r.evalCondition) : null
+      }))
   return results ? { ...b, results } : b
 })
 writeJson('benchmarks.json', benchmarks)
+
+// --- 4b. coding_agent_efficiency.json -----------------------------------------
+const codingAgentResults = q(`
+  SELECT br.id, br.benchmark_id AS benchmarkId, br.model_id AS modelId, br.score,
+         br.eval_condition_json AS condJson, br.raw_record_json AS rawJson
+  FROM benchmark_result br
+  JOIN benchmark b ON b.id = br.benchmark_id
+  WHERE b.category IN ('coding', 'agentic') AND br.score IS NOT NULL
+`).map((r) => {
+  const cond = r.condJson ? JSON.parse(r.condJson) : {}
+  const raw = r.rawJson ? JSON.parse(r.rawJson) : {}
+
+  const cost = cond.mean_cost_usd ?? cond.median_cost_usd ?? raw.total_cost ?? raw.cost ?? raw.instance_cost ?? null
+  const duration = cond.mean_duration_seconds ?? cond.median_duration_seconds ?? raw.seconds_per_case ?? null
+  const steps = cond.mean_agent_steps ?? cond.median_agent_steps ?? raw.instance_calls ?? null
+  const inTokens = cond.mean_input_tokens ?? cond.median_input_tokens ?? null
+  const outTokens = cond.mean_output_tokens ?? cond.median_output_tokens ?? null
+  const peakContext = cond.median_peak_context_tokens ?? null
+
+  const syntaxErrors = raw.syntax_errors ?? null
+  const indentationErrors = raw.indentation_errors ?? null
+  const malformedResponses = raw.num_malformed_responses ?? null
+  const contextExhaustions = raw.exhausted_context_windows ?? null
+  const timeouts = raw.test_timeouts ?? null
+
+  const editFormat = cond.edit_format ?? raw.edit_format ?? null
+  const harness = cond.harness ?? raw.harness ?? null
+  const reasoningEffort = cond.reasoning_effort ?? raw.reasoning_effort ?? null
+
+  return {
+    resultId: r.id,
+    benchmarkId: r.benchmarkId,
+    modelId: r.modelId,
+    score: r.score,
+    cost,
+    duration,
+    steps,
+    inTokens,
+    outTokens,
+    peakContext,
+    syntaxErrors,
+    indentationErrors,
+    malformedResponses,
+    contextExhaustions,
+    timeouts,
+    editFormat,
+    harness,
+    reasoningEffort
+  }
+}).filter((x) => x.cost !== null || x.duration !== null || x.steps !== null || x.syntaxErrors !== null)
+
+writeJson('coding_agent_efficiency.json', codingAgentResults)
 
 // --- 5. elo_*.json (columnar) --------------------------------------------------
 function emitElo(benchmarkId, filename) {
@@ -405,6 +488,68 @@ function emitElo(benchmarkId, filename) {
 }
 emitElo('lmarena_text_overall', 'elo_text_overall.json')
 emitElo('lmarena_text_coding', 'elo_text_coding.json')
+
+// --- 5b. benchmark_timeseries.json --------------------------------------------
+const timeseriesBenchmarks = [
+  'gpqa_diamond', 'hle', 'scicode', 'math_level_5', 'frontiermath',
+  'swe_bench_verified', 'deepswe', 'aider_polyglot', 'lcr', 'tau2',
+  'terminalbench_hard', 'ifbench', 'epoch_capabilities_index'
+]
+const timeseriesData = {}
+
+for (const benchId of timeseriesBenchmarks) {
+  const rows = q(
+    `SELECT br.model_id AS modelId, br.score, br.rank, br.measured_at AS measuredAt,
+            ss.fetched_at AS fetchedAt, br.source_snapshot_id AS sourceSnapshotId
+     FROM benchmark_result br
+     LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+     WHERE br.benchmark_id = ? AND br.score IS NOT NULL
+     ORDER BY br.model_id, br.measured_at`,
+    [benchId]
+  )
+
+  if (rows.length === 0) continue
+
+  const perModel = new Map()
+  for (const r of rows) {
+    const dateStr = r.measuredAt || r.fetchedAt
+    if (!dateStr) continue
+    let m = perModel.get(r.modelId)
+    if (!m) perModel.set(r.modelId, (m = new Map()))
+    const dateKey = dateStr.slice(0, 10)
+    const existing = m.get(dateKey)
+    const currentSnap = r.sourceSnapshotId ?? -1
+    if (!existing || currentSnap > existing.sourceSnapshotId) {
+      m.set(dateKey, {
+        t: Date.parse(dateStr),
+        score: r.score,
+        rank: r.rank,
+        sourceSnapshotId: currentSnap
+      })
+    }
+  }
+
+  const modelMeta = new Map(models.map((m) => [m.id, m]))
+  const series = []
+  const usedModels = []
+  for (const [modelId, points] of perModel) {
+    const meta = modelMeta.get(modelId)
+    if (!meta) continue
+    const sorted = [...points.values()].sort((a, b) => a.t - b.t)
+    series.push({
+      modelId,
+      t: sorted.map((p) => p.t),
+      score: sorted.map((p) => p.score),
+      rank: sorted.map((p) => p.rank)
+    })
+    usedModels.push({ id: meta.id, slug: meta.slug, dev: meta.dev })
+  }
+
+  if (series.length > 0) {
+    timeseriesData[benchId] = { models: usedModels, series }
+  }
+}
+writeJson('benchmark_timeseries.json', timeseriesData)
 
 // --- 6. prices.json -------------------------------------------------------------
 const priceRows = q(
