@@ -1,45 +1,14 @@
 import { useMemo, useState } from 'react'
-import { loadBenchmarks, loadModels, useData, type Benchmark, type BenchmarkResult } from '../lib/data'
+import { loadBenchmarks, loadModels, useData } from '../lib/data'
+import {
+  buildConsensusRows,
+  DEFAULT_CONSENSUS_BENCHMARKS,
+  type ConsensusRow,
+} from '../lib/consensus'
 import LabLogo from '../components/LabLogo'
 import { colorForDark } from '../lib/theme'
 
-interface CellDetail {
-  score: number
-  percentile: number
-  rank: number
-  total: number
-  date: string | null
-  selfReported: boolean
-  sourceId: string | null
-  fetchedAt: string | null
-}
-
-interface ConsensusRow {
-  modelId: number
-  modelName: string
-  modelSlug: string
-  developer: string | null
-  openWeights: boolean
-  scores: Record<string, CellDetail>
-  consensusScore: number
-  disagreementScore: number
-  benchmarkCount: number
-}
-
-const MATRIX_BENCHMARKS = [
-  { id: 'gpqa_diamond', label: 'GPQA Diamond' },
-  { id: 'hle', label: 'HLE (Reasoning)' },
-  { id: 'scicode', label: 'SciCode' },
-  { id: 'math_level_5', label: 'MATH L5' },
-  { id: 'frontiermath', label: 'FrontierMath' },
-  { id: 'swe_bench_verified', label: 'SWE Verified' },
-  { id: 'deepswe', label: 'DeepSWE' },
-  { id: 'aider_polyglot', label: 'Aider Polyglot' },
-  { id: 'lcr', label: 'LCR (Coding)' },
-  { id: 'tau2', label: 'TAU-Agent' },
-  { id: 'terminalbench_hard', label: 'TerminalBench' },
-  { id: 'ifbench', label: 'IFBench' },
-]
+const MATRIX_BENCHMARKS = DEFAULT_CONSENSUS_BENCHMARKS
 
 export default function Consensus() {
   const { data: models, loading: modelsLoading, error: modelsError } = useData(loadModels)
@@ -52,132 +21,7 @@ export default function Consensus() {
 
   const matrix = useMemo<ConsensusRow[]>(() => {
     if (!models || !benchmarks) return []
-
-    // 1. Map benchmarks by ID for fast lookup.
-    const benchMap = new Map<string, Benchmark>()
-    for (const b of benchmarks) {
-      benchMap.set(b.id, b)
-    }
-
-    // 2. Pre-filter and deduplicate results per benchmark, keeping only the best score per model from the LATEST snapshot.
-    const latestResultsByBenchmark = new Map<string, Map<number, BenchmarkResult>>()
-    
-    for (const b of benchmarks) {
-      if (b.id.startsWith('lmarena_') || !b.results || b.results.length === 0) continue
-      
-      // Find the latest snapshot ID or fetchedAt date among all results for this benchmark.
-      let latestSnapshotId = -1
-      let latestFetchedTime = 0
-      for (const r of b.results) {
-        const fTime = r.fetchedAt ? Date.parse(r.fetchedAt) : 0
-        if (fTime > latestFetchedTime) {
-          latestFetchedTime = fTime
-          latestSnapshotId = r.sourceSnapshotId ?? -1
-        } else if (fTime === latestFetchedTime && r.sourceSnapshotId != null && r.sourceSnapshotId > latestSnapshotId) {
-          latestSnapshotId = r.sourceSnapshotId
-        }
-      }
-
-      // Filter to results from this latest snapshot/fetchedAt.
-      const latestSnapshotResults = b.results.filter((r) => {
-        const fTime = r.fetchedAt ? Date.parse(r.fetchedAt) : 0
-        const isLatestTime = fTime === latestFetchedTime
-        const isLatestSnapshot = r.sourceSnapshotId === undefined || latestSnapshotId === -1 || r.sourceSnapshotId === latestSnapshotId
-        return isLatestTime && isLatestSnapshot
-      })
-      
-      const latestMap = new Map<number, BenchmarkResult>()
-      const higherIsBetter = b.higherIsBetter !== 0
-      
-      for (const r of latestSnapshotResults) {
-        const existing = latestMap.get(r.modelId)
-        if (!existing) {
-          latestMap.set(r.modelId, r)
-        } else {
-          const isBetter = higherIsBetter ? r.score > existing.score : r.score < existing.score
-          if (isBetter) {
-            latestMap.set(r.modelId, r)
-          }
-        }
-      }
-      latestResultsByBenchmark.set(b.id, latestMap)
-    }
-
-    // 3. For each benchmark, compute percentiles for all scored models.
-    const percentilesByBenchmark = new Map<string, Map<number, { percentile: number; rank: number; total: number }>>()
-
-    for (const [benchId, latestMap] of latestResultsByBenchmark) {
-      const b = benchMap.get(benchId)
-      if (!b) continue
-
-      const sortedScoredModels = [...latestMap.entries()]
-        .map(([modelId, r]) => ({ modelId, r }))
-        .sort((a, bResult) => {
-          const higherIsBetter = b.higherIsBetter !== 0
-          return higherIsBetter ? bResult.r.score - a.r.score : a.r.score - bResult.r.score
-        })
-
-      const map = new Map<number, { percentile: number; rank: number; total: number }>()
-      const total = sortedScoredModels.length
-
-      sortedScoredModels.forEach(({ modelId }, i) => {
-        const rank = i + 1
-        const percentile = total > 1 ? (1 - (rank - 1) / (total - 1)) * 100 : 100
-        map.set(modelId, { percentile, rank, total })
-      })
-
-      percentilesByBenchmark.set(benchId, map)
-    }
-
-    // 4. Compute Consensus Rows for each canonical model.
-    return models.map((m) => {
-      const rowScores: Record<string, CellDetail> = {}
-      const percentList: number[] = []
-
-      for (const col of MATRIX_BENCHMARKS) {
-        const rMap = latestResultsByBenchmark.get(col.id)
-        const pMap = percentilesByBenchmark.get(col.id)
-        if (!rMap || !pMap) continue
-
-        const r = rMap.get(m.id)
-        const p = pMap.get(m.id)
-
-        if (r && p) {
-          rowScores[col.id] = {
-            score: r.score,
-            percentile: p.percentile,
-            rank: p.rank,
-            total: p.total,
-            date: r.measuredAt,
-            selfReported: r.selfReported !== 0,
-            sourceId: r.sourceId ?? null,
-            fetchedAt: r.fetchedAt ?? null,
-          }
-          percentList.push(p.percentile)
-        }
-      }
-
-      const count = percentList.length
-      const avg = count > 0 ? percentList.reduce((a, bVal) => a + bVal, 0) / count : 0
-      
-      // Calculate standard deviation for disagreement.
-      const variance = count > 1
-        ? percentList.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / (count - 1)
-        : 0
-      const stdev = Math.sqrt(variance)
-
-      return {
-        modelId: m.id,
-        modelName: m.name,
-        modelSlug: m.slug,
-        developer: m.dev,
-        openWeights: m.open === 1,
-        scores: rowScores,
-        consensusScore: avg,
-        disagreementScore: stdev,
-        benchmarkCount: count,
-      }
-    })
+    return buildConsensusRows(models, benchmarks, MATRIX_BENCHMARKS)
   }, [models, benchmarks])
 
   // Filtered and sorted rows
@@ -215,8 +59,8 @@ export default function Consensus() {
       <div>
         <h1 className="text-lg font-semibold text-neutral-100">Consensus & Disagreement Matrix</h1>
         <p className="mt-1 text-xs text-neutral-500">
-          Analyze models across {MATRIX_BENCHMARKS.length} independent benchmarks. Scores are converted to percentiles within each benchmark.
-          Consensus represents average percentile; Disagreement represents standard deviation (higher = polarized performance).
+          Analyze models across {MATRIX_BENCHMARKS.length} signals, including Arena perception and independent benchmarks. Scores are converted to percentiles within each signal.
+          Consensus is a reliability-weighted percentile average; Disagreement remains the raw standard deviation diagnostic.
         </p>
       </div>
 
@@ -318,7 +162,7 @@ export default function Consensus() {
                   <span className="truncate max-w-40" title={row.modelName}>{row.modelName}</span>
                   {row.openWeights && (
                     <span className="rounded bg-emerald-950 text-[10px] text-emerald-400 px-1 border border-emerald-800">
-                      open
+                      OSS
                     </span>
                   )}
                 </td>
