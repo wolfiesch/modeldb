@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 import sys
@@ -403,6 +405,103 @@ def queue_candidate_options(conn: sqlite3.Connection, queue_id: int, *, limit: i
         "candidate_count": len(candidates),
         "options": options[:limit],
     }
+
+_QUEUE_EXPORT_FIELDS = [
+    "queue_id",
+    "provider",
+    "family",
+    "source_model_id",
+    "model_name",
+    "top_model_id",
+    "top_canonical_slug",
+    "top_score",
+    "top_match",
+    "suggested_approval_json",
+]
+
+
+def queue_review_export(
+    conn: sqlite3.Connection,
+    *,
+    source_id: str = "artificialanalysis",
+    format: str = "csv",
+    approval_threshold: int = 80,
+) -> str:
+    """Export pending review rows for manual queue approval."""
+
+    rows = _queue_review_rows(conn, source_id=source_id, approval_threshold=approval_threshold)
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=_QUEUE_EXPORT_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+        return output.getvalue()
+    if format == "markdown":
+        lines = [
+            "| " + " | ".join(_QUEUE_EXPORT_FIELDS) + " |",
+            "| " + " | ".join("---" for _ in _QUEUE_EXPORT_FIELDS) + " |",
+        ]
+        for row in rows:
+            lines.append("| " + " | ".join(_markdown_cell(row[field]) for field in _QUEUE_EXPORT_FIELDS) + " |")
+        return "\n".join(lines) + "\n"
+    raise ValueError("queue export format must be 'csv' or 'markdown'")
+
+
+def _queue_review_rows(
+    conn: sqlite3.Connection,
+    *,
+    source_id: str,
+    approval_threshold: int,
+) -> list[dict[str, str]]:
+    queue_ids = [
+        int(row[0])
+        for row in conn.execute(
+            """
+            SELECT erq.id
+            FROM entity_resolution_queue erq
+            JOIN source_model_record smr ON smr.id = erq.source_record_id
+            JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+            WHERE ss.source_id = ?
+              AND erq.status = 'pending'
+              AND erq.resolved_at IS NULL
+              AND erq.candidate_model_id IS NULL
+            ORDER BY erq.id
+            """,
+            (source_id,),
+        )
+    ]
+    rows: list[dict[str, str]] = []
+    for queue_id in queue_ids:
+        payload = queue_candidate_options(conn, queue_id)
+        options = payload["options"]
+        top = options[0] if options else None
+        strong = [option for option in options if int(option["score"]) >= approval_threshold]
+        suggested = ""
+        if len(strong) == 1:
+            suggested = json.dumps(
+                {"queue_id": queue_id, "candidate_model_id": strong[0]["model_id"]},
+                sort_keys=True,
+            )
+        rows.append(
+            {
+                "queue_id": str(queue_id),
+                "provider": str(payload["provider"]),
+                "family": str(payload["family"]),
+                "source_model_id": str(payload["source_model_id"]),
+                "model_name": str(payload["model_name"]),
+                "top_model_id": str(top["model_id"]) if top else "",
+                "top_canonical_slug": str(top["canonical_slug"]) if top else "",
+                "top_score": str(top["score"]) if top else "",
+                "top_match": str(top["match"]) if top else "",
+                "suggested_approval_json": suggested,
+            }
+        )
+    return rows
+
+
+def _markdown_cell(value: str) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
 
 
 def _queue_option_score(
@@ -888,6 +987,22 @@ def main(argv: list[str] | None = None) -> int:
             options = queue_candidate_options(conn, queue_id=int(argv[1]))
         print(json.dumps(options, sort_keys=True))
         return 0
+    if argv and argv[0] == "queue-export":
+        export_format = "csv"
+        args = argv[1:]
+        if args[:2] == ["--format", "markdown"]:
+            export_format = "markdown"
+            args = args[2:]
+        elif args[:2] == ["--format", "csv"]:
+            args = args[2:]
+        if len(args) > 1:
+            print("Usage: python -m resolve.resolver queue-export [--format csv|markdown] [source_id]")
+            return 2
+        source_id = args[0] if args else "artificialanalysis"
+        with connect() as conn:
+            export = queue_review_export(conn, source_id=source_id, format=export_format)
+        print(export, end="")
+        return 0
     if argv and argv[0] == "queue-report":
         if len(argv) > 2:
             print("Usage: python -m resolve.resolver queue-report [source_id]")
@@ -903,6 +1018,7 @@ def main(argv: list[str] | None = None) -> int:
         print("       python -m resolve.resolver accept-batch FILE.json")
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
+        print("       python -m resolve.resolver queue-export [--format csv|markdown] [source_id]")
         print("       python -m resolve.resolver queue-report [source_id]")
         return 2
     with connect() as conn:
