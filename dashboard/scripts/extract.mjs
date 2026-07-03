@@ -39,6 +39,7 @@ function shortName(slug) {
   const BRAND_CASING = [
     [/\bGlm\b/g, 'GLM'],
     [/\bDeepseek\b/g, 'DeepSeek'],
+    [/\bJt\b/g, 'JT'],
     [/\bKimi K2\b/g, 'Kimi K2'],
     [/\bMimo\b/g, 'MiMo'],
     [/\bQwq\b/g, 'QwQ'],

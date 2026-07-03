@@ -22,6 +22,11 @@ const CASES = [
     expected: 'GPT 5',
     contract: 'preserves the GPT brand casing when formatting OpenAI slugs',
   },
+  {
+    slug: 'china-mobile/jt-35b-flash',
+    expected: 'JT 35B Flash',
+    contract: 'preserves uppercase JT brand casing on China Mobile Flash slugs',
+  },
 ] as const
 
 describe('shortName display formatting', () => {

@@ -46,6 +46,7 @@ export function shortName(slug: string): string {
   const BRAND_CASING: Array<[RegExp, string]> = [
     [/\bGlm\b/g, 'GLM'],
     [/\bDeepseek\b/g, 'DeepSeek'],
+    [/\bJt\b/g, 'JT'],
     [/\bKimi K2\b/g, 'Kimi K2'],
     [/\bMimo\b/g, 'MiMo'],
     [/\bQwq\b/g, 'QwQ'],
