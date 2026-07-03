@@ -1,31 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import LabLogo from '../components/LabLogo'
-import { loadElo, loadModels, useData, type Model } from '../lib/data'
+import { loadElo, loadMeta, loadModels, useData } from '../lib/data'
 import { labLabel, labSearchValues } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
+import { buildTimelineRows, formatTimelineDate } from '../lib/timelineRows'
 
 const loadOverallElo = () => loadElo('text_overall')
-const MS_PER_DAY = 24 * 60 * 60 * 1000
-
-interface TimelineRow {
-  model: Model
-  releaseMs: number
-  endMs: number
-  released: string
-  lastSeen: string
-  deprecated: boolean
-}
-
-function parseDateMs(value: string | null): number | null {
-  if (!value) return null
-  const ms = Date.parse(value)
-  return Number.isFinite(ms) ? ms : null
-}
-
-function formatDate(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10)
-}
+const MIN_SCALE_SPAN_MS = 24 * 60 * 60 * 1000
 
 function percent(ms: number, min: number, span: number): number {
   return ((ms - min) / span) * 100
@@ -34,41 +16,16 @@ function percent(ms: number, min: number, span: number): number {
 export default function Timeline() {
   const { data: models, loading, error } = useData(loadModels)
   const { data: elo, loading: eloLoading, error: eloError } = useData(loadOverallElo)
+  const { data: meta, loading: metaLoading, error: metaError } = useData(loadMeta)
   const navigate = useNavigate()
   const [devFilter, setDevFilter] = useState<string | null>(null)
   const [query, setQuery] = useState('')
 
-  const lastSeenByModel = useMemo(() => {
-    const map = new Map<number, number>()
-    for (const series of elo?.series ?? []) {
-      const last = series.t.at(-1)
-      if (last != null) map.set(series.modelId, last)
-    }
-    return map
-  }, [elo])
 
-  const allRows = useMemo<TimelineRow[]>(() => {
-    if (!models) return []
-    return models
-      .map((model) => {
-        const releaseMs = parseDateMs(model.released)
-        if (releaseMs == null) return null
-        const lastSeen = lastSeenByModel.get(model.id)
-        const rawEndMs = lastSeen ?? releaseMs + 90 * MS_PER_DAY
-        const endMs = Math.max(rawEndMs, releaseMs + MS_PER_DAY)
-        const stability = model.stability?.toLowerCase()
-        return {
-          model,
-          releaseMs,
-          endMs,
-          released: formatDate(releaseMs),
-          lastSeen: formatDate(endMs),
-          deprecated: stability === 'deprecated' || stability === 'retired',
-        }
-      })
-      .filter((row): row is TimelineRow => row != null)
-      .sort((a, b) => b.releaseMs - a.releaseMs)
-  }, [models, lastSeenByModel])
+  const allRows = useMemo(() => {
+    if (!models || !elo || !meta) return []
+    return buildTimelineRows(models, elo.series, Date.parse(meta.generatedAt))
+  }, [models, elo, meta])
 
   const devs = useMemo(() => {
     const counts = new Map<string, number>()
@@ -102,12 +59,12 @@ export default function Timeline() {
   const scale = useMemo(() => {
     const rows = filteredRows.length > 0 ? filteredRows : allRows
     const min = Math.min(...rows.map((row) => row.releaseMs))
-    const max = Math.max(...rows.map((row) => row.endMs))
-    const span = Math.max(max - min, MS_PER_DAY)
+    const max = Math.max(...rows.map((row) => row.displayEndMs))
+    const span = Math.max(max - min, MIN_SCALE_SPAN_MS)
     return { min, max, span }
   }, [allRows, filteredRows])
 
-  if (loading || eloLoading) {
+  if (loading || eloLoading || metaLoading) {
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center space-y-4">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-800 border-t-neutral-400" />
@@ -115,8 +72,10 @@ export default function Timeline() {
       </div>
     )
   }
-  if (error || eloError) return <div className="text-red-400">{error ?? eloError}</div>
-  if (!models || !elo) return null
+  if (error || eloError || metaError) return <div className="text-red-400">{error ?? eloError ?? metaError}</div>
+  if (!models || !elo || !meta) return null
+
+  const asOfLabel = formatTimelineDate(Date.parse(meta.generatedAt))
 
   return (
     <div className="space-y-4">
@@ -152,6 +111,12 @@ export default function Timeline() {
           <div className="text-xs text-neutral-500">
             {filteredRows.length} of {allRows.length} released models
           </div>
+          <div className="flex items-center gap-2 text-xs text-neutral-500">
+            <span className="inline-block h-2 w-8 rounded-full bg-neutral-400 opacity-35" />
+            active as of {asOfLabel}
+            <span className="inline-block h-2 w-8 rounded-full bg-neutral-400 opacity-90" />
+            observed in LMArena
+          </div>
         </div>
       </div>
 
@@ -164,16 +129,25 @@ export default function Timeline() {
           <div className="mb-4 grid grid-cols-[minmax(11rem,15rem)_1fr] gap-4 text-xs text-neutral-500">
             <div>Model</div>
             <div className="flex justify-between">
-              <span>{formatDate(scale.min)}</span>
-              <span>{formatDate(scale.max)}</span>
+              <span>{formatTimelineDate(scale.min)}</span>
+              <span>{formatTimelineDate(scale.max)}</span>
             </div>
           </div>
 
           <div className="space-y-1">
             {visible.map((row) => {
               const left = percent(row.releaseMs, scale.min, scale.span)
-              const width = Math.max(percent(row.endMs, scale.min, scale.span) - left, 0)
-              const title = `${row.model.name}\nReleased: ${row.released}\nLast seen: ${row.lastSeen}`
+              const observedWidth =
+                row.observedEndMs == null ? 0 : Math.max(percent(row.observedEndMs, scale.min, scale.span) - left, 0)
+              const displayWidth = Math.max(percent(row.displayEndMs, scale.min, scale.span) - left, 0)
+              const statusLabel = row.active ? 'current' : row.retired ? 'retired' : 'unknown'
+              const title = [
+                row.model.name,
+                `Released: ${row.released}`,
+                `Observed through: ${row.observedThrough ?? 'no LMArena point yet'}`,
+                `Shown through: ${row.shownThrough}`,
+                `Status: ${statusLabel}`,
+              ].join('\n')
               return (
                 <button
                   key={row.model.id}
@@ -201,15 +175,26 @@ export default function Timeline() {
                     <div className="absolute inset-y-0 left-0 border-l border-neutral-800/70" />
                     <div className="absolute inset-y-0 right-0 border-r border-neutral-800/70" />
                     <div
-                      className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[9999px] shadow-[0_0_18px_rgba(255,255,255,0.08)]"
+                      className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[9999px] opacity-35 shadow-[0_0_18px_rgba(255,255,255,0.08)]"
                       style={{
                         left: `${left}%`,
-                        width: `${width}%`,
+                        width: `${displayWidth}%`,
                         minWidth: 6,
                         backgroundColor: colorForDark(row.model.dev),
-                        opacity: row.deprecated ? 0.5 : 0.9,
                       }}
                     />
+                    {row.observedEndMs == null ? null : (
+                      <div
+                        className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[9999px] shadow-[0_0_18px_rgba(255,255,255,0.08)]"
+                        style={{
+                          left: `${left}%`,
+                          width: `${observedWidth}%`,
+                          minWidth: 6,
+                          backgroundColor: colorForDark(row.model.dev),
+                          opacity: row.retired ? 0.5 : 0.9,
+                        }}
+                      />
+                    )}
                   </div>
                 </button>
               )
