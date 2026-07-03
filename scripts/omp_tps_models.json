@@ -35,17 +35,17 @@
     "providerLabel": "OpenAI Codex"
   },
   {
-    "key": "kimi-k27-code-highspeed",
-    "label": "Kimi K2.7 Code Highspeed",
-    "canonicalSlug": "moonshotai/kimi-k2.7-code-highspeed",
-    "ompSelector": "vibeproxy/kimi-k2.7-code-highspeed",
-    "providerLabel": "VibeProxy"
+    "key": "kimi-k27-code",
+    "label": "Kimi K2.7 Code",
+    "canonicalSlug": "moonshotai/kimi-k2.7-code",
+    "ompSelector": "cursor/kimi-k2.7-code",
+    "providerLabel": "Cursor"
   },
   {
     "key": "glm-52",
     "label": "GLM 5.2",
     "canonicalSlug": "zai/glm-5.2",
-    "ompSelector": "neuralwatt/glm-5.2:medium",
-    "providerLabel": "NeuralWatt"
+    "ompSelector": "zai/glm-5.2:medium",
+    "providerLabel": "Z.ai"
   }
 ]
