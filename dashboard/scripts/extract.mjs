@@ -25,14 +25,13 @@ const OMP_TPS_BENCHMARK_ID = 'omp_visible_output_tokens_per_second'
 function shortName(slug) {
   let name = String(slug).split('/').pop() ?? String(slug)
   name = name.replace(/-\d{4}-?\d{2}-?\d{2}$/, '')
-  name = name.replace(/(\d)-(\d)/g, '$1.$2')
+  name = name.replace(/(\d)-(\d)(?!\d)/g, '$1.$2')
   name = name.replace(
     /^claude-(\d+(?:\.\d+)?)-(haiku|sonnet|opus)/i,
     (_, gen, tier) => `${tier}-${gen}`
   )
   name = name
     .replace(/^claude-/, '')
-    .replace(/^gemini-/, '')
     .replace(/^gpt-/, 'GPT-')
     .replace(/-/g, ' ')
     .replace(/\b([a-z])/g, (letter) => letter.toUpperCase())
@@ -43,7 +42,12 @@ function shortName(slug) {
     [/\bKimi K2\b/g, 'Kimi K2'],
     [/\bMimo\b/g, 'MiMo'],
     [/\bQwq\b/g, 'QwQ'],
-    [/\bLlama\b/g, 'Llama']
+    [/\bLlama\b/g, 'Llama'],
+    [/\bGemma\b/g, 'Gemma'],
+    [/\bGemini\b/g, 'Gemini'],
+    [/\bPalm\b/g, 'PaLM'],
+    [/\b(\d+)m\b/gi, '$1M'],
+    [/\b(\d+)b\b/gi, '$1B'],
   ]
   for (const [pattern, replacement] of BRAND_CASING) {
     name = name.replace(pattern, replacement)
