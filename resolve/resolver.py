@@ -426,6 +426,20 @@ _QUEUE_EXPORT_FIELDS = [
     "suggested_approval_json",
 ]
 
+_QUEUE_CANDIDATE_EXPORT_FIELDS = [
+    "queue_id",
+    "provider",
+    "family",
+    "source_model_id",
+    "model_name",
+    "slug",
+    "candidate_count",
+    "provider_scoped_candidates",
+    "existing_candidate_model_ids",
+]
+
+
+
 
 def queue_review_export(
     conn: sqlite3.Connection,
@@ -455,6 +469,91 @@ def queue_review_export(
             lines.append("| " + " | ".join(_markdown_cell(row[field]) for field in _QUEUE_EXPORT_FIELDS) + " |")
         return "\n".join(lines) + "\n"
     raise ValueError("queue export format must be 'csv' or 'markdown'")
+
+def queue_candidates_export(
+    conn: sqlite3.Connection,
+    *,
+    source_id: str = "artificialanalysis",
+    format: str = "csv",
+) -> str:
+    """Export raw provider-scoped candidates for manual queue review."""
+
+    rows = _queue_candidate_review_rows(conn, source_id=source_id)
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=_QUEUE_CANDIDATE_EXPORT_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+        return output.getvalue()
+    if format == "markdown":
+        lines = [
+            "| " + " | ".join(_QUEUE_CANDIDATE_EXPORT_FIELDS) + " |",
+            "| " + " | ".join("---" for _ in _QUEUE_CANDIDATE_EXPORT_FIELDS) + " |",
+        ]
+        for row in rows:
+            lines.append("| " + " | ".join(_markdown_cell(row[field]) for field in _QUEUE_CANDIDATE_EXPORT_FIELDS) + " |")
+        return "\n".join(lines) + "\n"
+    raise ValueError("queue candidates export format must be 'csv' or 'markdown'")
+
+
+def _queue_candidate_review_rows(conn: sqlite3.Connection, *, source_id: str) -> list[dict[str, str]]:
+    existing_model_ids = _existing_model_ids_by_normalized_name(conn)
+    rows: list[dict[str, str]] = []
+    for queue_id, source_model_id, display_name, features_json in conn.execute(
+        """
+        SELECT erq.id, smr.source_model_id, smr.display_name, erq.features_json
+        FROM entity_resolution_queue erq
+        JOIN source_model_record smr ON smr.id = erq.source_record_id
+        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+        WHERE ss.source_id = ?
+          AND erq.status = 'pending'
+          AND erq.resolved_at IS NULL
+          AND erq.candidate_model_id IS NULL
+        ORDER BY erq.id
+        """,
+        (source_id,),
+    ):
+        features = _loads_json(features_json)
+        provider = _text_or_unknown(features.get("model_creator_slug"))
+        candidates = _string_list(features.get("provider_scoped_candidates"))
+        first_candidate = candidates[0] if candidates else ""
+        matched_ids = sorted(
+            {
+                model_id
+                for candidate in candidates
+                for model_id in existing_model_ids.get(normalize_alias(candidate), [])
+            }
+        )
+        rows.append(
+            {
+                "queue_id": str(queue_id),
+                "provider": provider,
+                "family": _queue_candidate_family(provider, first_candidate),
+                "source_model_id": str(source_model_id),
+                "model_name": str(features.get("model_name") or display_name),
+                "slug": str(features.get("slug") or ""),
+                "candidate_count": str(len(candidates)),
+                "provider_scoped_candidates": "; ".join(candidates),
+                "existing_candidate_model_ids": ",".join(str(model_id) for model_id in matched_ids),
+            }
+        )
+    return rows
+
+
+def _existing_model_ids_by_normalized_name(conn: sqlite3.Connection) -> dict[str, list[int]]:
+    model_ids: dict[str, set[int]] = {}
+    for model_id, canonical_slug in conn.execute("SELECT id, canonical_slug FROM model"):
+        model_ids.setdefault(normalize_alias(canonical_slug), set()).add(int(model_id))
+    for model_id, alias_normalized in conn.execute(
+        """
+        SELECT model_id, alias_normalized
+        FROM model_alias
+        WHERE model_id IS NOT NULL
+        """
+    ):
+        model_ids.setdefault(alias_normalized, set()).add(int(model_id))
+    return {key: sorted(values) for key, values in model_ids.items()}
+
 
 
 def _queue_review_rows(
@@ -1032,6 +1131,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(export, end="")
         return 0
+    if argv and argv[0] == "queue-candidates-export":
+        export_format = "csv"
+        args = argv[1:]
+        if args[:2] == ["--format", "markdown"]:
+            export_format = "markdown"
+            args = args[2:]
+        elif args[:2] == ["--format", "csv"]:
+            args = args[2:]
+        if len(args) > 1:
+            print("Usage: python -m resolve.resolver queue-candidates-export [--format csv|markdown] [source_id]")
+            return 2
+        source_id = args[0] if args else "artificialanalysis"
+        with connect() as conn:
+            export = queue_candidates_export(conn, source_id=source_id, format=export_format)
+        print(export, end="")
+        return 0
     if argv and argv[0] == "queue-report":
         if len(argv) > 2:
             print("Usage: python -m resolve.resolver queue-report [source_id]")
@@ -1048,6 +1163,7 @@ def main(argv: list[str] | None = None) -> int:
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-export [--format csv|markdown] [--suggested-only] [source_id]")
+        print("       python -m resolve.resolver queue-candidates-export [--format csv|markdown] [source_id]")
         print("       python -m resolve.resolver queue-report [source_id]")
         return 2
     with connect() as conn:
