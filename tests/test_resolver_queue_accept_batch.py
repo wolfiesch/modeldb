@@ -79,6 +79,103 @@ class AcceptQueueBatchTests(unittest.TestCase):
             ],
         )
 
+
+    def test_dry_run_reports_accepted_items_without_mutating_queue_or_audit(self) -> None:
+        first_queue_id = self._insert_queue_row(
+            source_record_id=101,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        second_queue_id = self._insert_queue_row(
+            source_record_id=102,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["anthropic-claude-opus-4"]},
+        )
+        approvals = [
+            {"queue_id": first_queue_id, "candidate_model_id": 1},
+            {"queue_id": second_queue_id, "candidate_model_id": 2},
+        ]
+        before_rows = self._queue_states()
+        self.assertFalse(self._table_exists("entity_resolution_audit"))
+
+        summary = resolver.accept_queue_batch(self.conn, approvals, dry_run=True)
+
+        self.assertEqual(summary["accepted"], 2)
+        self.assertIs(summary["dry_run"], True)
+        self.assertEqual(
+            [(item["queue_id"], item["candidate_model_id"]) for item in summary["items"]],
+            [(first_queue_id, 1), (second_queue_id, 2)],
+        )
+        self.assertEqual(self._queue_states(), before_rows)
+        self.assertEqual(self._audit_count_or_zero(), 0)
+
+    def test_real_batch_after_dry_run_still_applies_approvals_and_audit_rows(self) -> None:
+        first_queue_id = self._insert_queue_row(
+            source_record_id=101,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        second_queue_id = self._insert_queue_row(
+            source_record_id=102,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["anthropic-claude-opus-4"]},
+        )
+        approvals = [
+            {"queue_id": first_queue_id, "candidate_model_id": 1},
+            {"queue_id": second_queue_id, "candidate_model_id": 2},
+        ]
+
+        dry_run_summary = resolver.accept_queue_batch(self.conn, approvals, dry_run=True)
+        real_summary = resolver.accept_queue_batch(self.conn, approvals)
+
+        self.assertEqual(dry_run_summary["accepted"], 2)
+        self.assertIs(dry_run_summary["dry_run"], True)
+        self.assertEqual(real_summary["accepted"], 2)
+        self.assertEqual(
+            self._queue_states(),
+            [
+                (first_queue_id, 101, 1, "accepted", None),
+                (second_queue_id, 102, 2, "accepted", None),
+            ],
+        )
+        self.assertEqual(
+            [(row["action"], row["queue_id"], row["candidate_model_id"]) for row in self._audit_rows()],
+            [("accept", first_queue_id, 1), ("accept", second_queue_id, 2)],
+        )
+
+    def test_invalid_dry_run_leaves_all_queue_rows_and_audit_unchanged(self) -> None:
+        valid_queue_id = self._insert_queue_row(
+            source_record_id=101,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        invalid_queue_id = self._insert_queue_row(
+            source_record_id=102,
+            status="accepted",
+            candidate_model_id=2,
+            features={"provider_scoped_candidates": ["anthropic-claude-opus-4"]},
+        )
+        before_rows = self._queue_states()
+        self.assertFalse(self._table_exists("entity_resolution_audit"))
+
+        with self.assertRaises(ValueError):
+            resolver.accept_queue_batch(
+                self.conn,
+                [
+                    {"queue_id": valid_queue_id, "candidate_model_id": 1},
+                    {"queue_id": invalid_queue_id, "candidate_model_id": 2},
+                ],
+                dry_run=True,
+            )
+
+        self.assertEqual(self._queue_states(), before_rows)
+        self.assertEqual(self._audit_count_or_zero(), 0)
+
     def test_invalid_approval_leaves_all_queue_rows_and_audit_unchanged(self) -> None:
         for name, invalid_row, invalid_model_id in [
             ("unknown model id", {"status": "pending", "candidate_model_id": None}, 999),
@@ -160,6 +257,45 @@ class AcceptQueueBatchTests(unittest.TestCase):
             [(row["action"], row["queue_id"], row["candidate_model_id"]) for row in self._audit_rows()],
             [("accept", first_queue_id, 1), ("accept", second_queue_id, 2)],
         )
+
+    def test_accept_batch_dry_run_cli_reads_json_file_prints_summary_without_mutation(self) -> None:
+        first_queue_id = self._insert_queue_row(
+            source_record_id=101,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        second_queue_id = self._insert_queue_row(
+            source_record_id=102,
+            status="pending",
+            candidate_model_id=None,
+            features={"provider_scoped_candidates": ["anthropic-claude-opus-4"]},
+        )
+        approvals = [
+            {"queue_id": first_queue_id, "candidate_model_id": 1},
+            {"queue_id": second_queue_id, "candidate_model_id": 2},
+        ]
+        before_rows = self._queue_states()
+        stdout = io.StringIO()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "approvals.json"
+            path.write_text(json.dumps(approvals), encoding="utf-8")
+            with patch.object(resolver, "connect", return_value=_ExistingConnection(self.conn)):
+                with redirect_stdout(stdout):
+                    exit_code = resolver.main(["accept-batch", "--dry-run", str(path)])
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["accepted"], 2)
+        self.assertIs(payload["dry_run"], True)
+        self.assertEqual(
+            [(item["queue_id"], item["candidate_model_id"]) for item in payload["items"]],
+            [(first_queue_id, 1), (second_queue_id, 2)],
+        )
+        self.assertEqual(self._queue_states(), before_rows)
+        self.assertEqual(self._audit_count_or_zero(), 0)
+
 
     def _new_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(":memory:")
@@ -250,6 +386,12 @@ class AcceptQueueBatchTests(unittest.TestCase):
             ).fetchone()
             is not None
         )
+
+    def _audit_count_or_zero(self, *, conn: sqlite3.Connection | None = None) -> int:
+        if not self._table_exists("entity_resolution_audit", conn=conn):
+            return 0
+        target = self.conn if conn is None else conn
+        return int(target.execute("SELECT COUNT(*) FROM entity_resolution_audit").fetchone()[0])
 
     def _audit_rows(self) -> list[sqlite3.Row]:
         old_factory = self.conn.row_factory

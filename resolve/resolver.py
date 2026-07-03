@@ -232,7 +232,12 @@ def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model
 
     return {"accepted": 1, "queue_id": queue_id, "candidate_model_id": candidate_model_id}
 
-def accept_queue_batch(conn: sqlite3.Connection, approvals: list[dict[str, Any]]) -> dict[str, Any]:
+def accept_queue_batch(
+    conn: sqlite3.Connection,
+    approvals: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
     """Atomically accept an explicit reviewed list of queue/model pairs."""
 
     conn.execute("SAVEPOINT accept_queue_batch")
@@ -245,12 +250,14 @@ def accept_queue_batch(conn: sqlite3.Connection, approvals: list[dict[str, Any]]
             )
             for approval in approvals
         ]
+        if dry_run:
+            conn.execute("ROLLBACK TO accept_queue_batch")
+        conn.execute("RELEASE accept_queue_batch")
     except Exception:
         conn.execute("ROLLBACK TO accept_queue_batch")
         conn.execute("RELEASE accept_queue_batch")
         raise
-    conn.execute("RELEASE accept_queue_batch")
-    return {"accepted": len(items), "items": items}
+    return {"accepted": len(items), "items": items, "dry_run": dry_run}
 
 
 def _required_int(payload: dict[str, Any], key: str) -> int:
@@ -967,16 +974,26 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, sort_keys=True))
         return 0
     if argv and argv[0] == "accept-batch":
-        if len(argv) != 2:
-            print("Usage: python -m resolve.resolver accept-batch FILE.json")
+        if len(argv) >= 2 and argv[1] == "--dry-run":
+            if len(argv) != 3:
+                print("Usage: python -m resolve.resolver accept-batch [--dry-run] FILE.json")
+                return 2
+            dry_run = True
+            input_path = argv[2]
+        elif len(argv) == 2:
+            dry_run = False
+            input_path = argv[1]
+        else:
+            print("Usage: python -m resolve.resolver accept-batch [--dry-run] FILE.json")
             return 2
-        with open(argv[1], encoding="utf-8") as file:
+        with open(input_path, encoding="utf-8") as file:
             approvals = json.load(file)
         if not isinstance(approvals, list):
             raise ValueError("accept-batch input must be a JSON array")
         with connect() as conn:
-            summary = accept_queue_batch(conn, approvals)
-            conn.commit()
+            summary = accept_queue_batch(conn, approvals, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
     if argv and argv[0] == "options":
@@ -1015,7 +1032,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(argv) != 1:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
         print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
-        print("       python -m resolve.resolver accept-batch FILE.json")
+        print("       python -m resolve.resolver accept-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-export [--format csv|markdown] [source_id]")
