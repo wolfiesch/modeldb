@@ -98,10 +98,14 @@ export default function EloOverTime() {
       .sort((a, b) => b.latest - a.latest)
   }, [activeDataset])
 
+  const [frontierHolderIds, setFrontierHolderIds] = useState<Set<number>>(new Set())
+
   const activeIds = useMemo(() => {
     if (selected) return selected
-    return new Set(ranked.slice(0, 15).map((r) => r.modelId))
-  }, [selected, ranked])
+    const ids = new Set<number>(ranked.slice(0, 15).map((r) => r.modelId))
+    for (const id of frontierHolderIds) ids.add(id)
+    return ids
+  }, [selected, ranked, frontierHolderIds])
 
   // Compute the frontier envelope and active series.
   const envelopeAndLines = useMemo(() => {
@@ -133,7 +137,7 @@ export default function EloOverTime() {
     const modelMeta = new Map(models.map((m) => [m.id, m]))
 
     // Keep track of which model resets/defines the maximum frontier at each step.
-    const frontierResets: Array<{ t: number; modelName: string; score: number }> = []
+    const frontierResets: Array<{ t: number; modelId: number; modelName: string; score: number }> = []
     let currentGlobalMax = -Infinity
 
     for (const t of times) {
@@ -155,6 +159,7 @@ export default function EloOverTime() {
           if (meta) {
             frontierResets.push({
               t,
+              modelId: maxPoint.modelId,
               modelName: meta.name,
               score: maxVal,
             })
@@ -183,6 +188,11 @@ export default function EloOverTime() {
       frontierResets,
     }
   }, [activeDataset, models])
+
+  useEffect(() => {
+    if (!envelopeAndLines) return
+    setFrontierHolderIds(new Set(envelopeAndLines.frontierResets.map((r) => r.modelId)))
+  }, [envelopeAndLines])
 
   const option = useMemo<EChartsCoreOption | null>(() => {
     if (!activeDataset || !envelopeAndLines) return null
