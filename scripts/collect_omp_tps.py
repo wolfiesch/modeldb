@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 DEFAULT_CONFIG = REPO_ROOT / "scripts" / "omp_tps_models.json"
 DEFAULT_PROMPT = "Output 180 comma-separated integers starting at 1. No explanation."
 SPEEDTEST = Path.home() / ".omp/agent/skills/omp-model-speedtest/scripts/omp_speedtest.py"
