@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 import sqlite3
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -122,6 +125,104 @@ class DrainAcceptedQueueTests(unittest.TestCase):
         self.assertNotEqual(status, "pending")
         self.assertIsNotNone(resolved_at)
 
+    def test_dry_run_reports_accepted_row_without_mutating_aliases_queue_or_audit(self) -> None:
+        source_record_id = self._insert_source_record("qwen3-5-omni-plus")
+        queue_id = self._insert_queue_row(
+            source_record_id=source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={
+                "provider_scoped_candidates": [
+                    "alibaba-qwen3-5-omni-plus",
+                    "alibaba-qwen3-5-omni-plus-preview",
+                ]
+            },
+        )
+
+        summary = resolver.drain_accepted_queue(self.conn, dry_run=True)
+
+        self.assertEqual(summary["processed"], 1)
+        self.assertEqual(summary["aliases_upserted"], 2)
+        self.assertEqual(summary["records_updated"], 1)
+        self.assertEqual(summary["skipped"], 0)
+        self.assertEqual(self._alias_count(), 0)
+        self.assertIsNone(self._linked_alias_id(source_record_id))
+        self.assertEqual(self._queue_state(queue_id), ("accepted", None))
+        self.assertEqual(self._audit_count(), 0)
+
+    def test_real_drain_after_dry_run_materializes_aliases_source_link_resolved_at_and_audit(
+        self,
+    ) -> None:
+        source_record_id = self._insert_source_record("qwen3-5-omni-plus")
+        queue_id = self._insert_queue_row(
+            source_record_id=source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={
+                "provider_scoped_candidates": [
+                    "alibaba-qwen3-5-omni-plus",
+                    "alibaba-qwen3-5-omni-plus-preview",
+                ]
+            },
+        )
+
+        dry_run_summary = resolver.drain_accepted_queue(self.conn, dry_run=True)
+        real_summary = resolver.drain_accepted_queue(self.conn)
+
+        self.assertEqual(dry_run_summary["processed"], 1)
+        self.assertEqual(dry_run_summary["aliases_upserted"], 2)
+        self.assertEqual(real_summary["processed"], 1)
+        self.assertEqual(real_summary["aliases_upserted"], 2)
+        aliases = self.conn.execute(
+            """
+            SELECT id, alias_string, model_id
+            FROM model_alias
+            ORDER BY alias_string
+            """
+        ).fetchall()
+        self.assertEqual(
+            [(row[1], row[2]) for row in aliases],
+            [
+                ("alibaba-qwen3-5-omni-plus", 1),
+                ("alibaba-qwen3-5-omni-plus-preview", 1),
+            ],
+        )
+        self.assertIn(self._linked_alias_id(source_record_id), {row[0] for row in aliases})
+        status, resolved_at = self._queue_state(queue_id)
+        self.assertEqual(status, "accepted")
+        self.assertIsNotNone(resolved_at)
+        self.assertEqual(self._audit_count(), 1)
+
+    def test_drain_accepted_dry_run_cli_prints_json_summary_without_mutation(self) -> None:
+        source_record_id = self._insert_source_record("qwen3-5-omni-plus")
+        queue_id = self._insert_queue_row(
+            source_record_id=source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={
+                "provider_scoped_candidates": [
+                    "alibaba-qwen3-5-omni-plus",
+                    "alibaba-qwen3-5-omni-plus-preview",
+                ]
+            },
+        )
+        stdout = io.StringIO()
+
+        with patch.object(resolver, "connect", return_value=_ExistingConnection(self.conn)):
+            with redirect_stdout(stdout):
+                exit_code = resolver.main(["drain-accepted", "--dry-run"])
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["processed"], 1)
+        self.assertEqual(payload["aliases_upserted"], 2)
+        self.assertEqual(payload["records_updated"], 1)
+        self.assertEqual(payload["skipped"], 0)
+        self.assertEqual(self._alias_count(), 0)
+        self.assertIsNone(self._linked_alias_id(source_record_id))
+        self.assertEqual(self._queue_state(queue_id), ("accepted", None))
+        self.assertEqual(self._audit_count(), 0)
+
     def test_accepted_queue_row_without_candidate_model_is_skipped_without_creating_alias(self) -> None:
         source_record_id = self._insert_source_record("unknown-qwen")
         queue_id = self._insert_queue_row(
@@ -207,6 +308,41 @@ class DrainAcceptedQueueTests(unittest.TestCase):
             "SELECT model_alias_id FROM source_model_record WHERE id = ?",
             (source_record_id,),
         ).fetchone()[0]
+
+    def _queue_state(self, queue_id: int) -> tuple[str, str | None]:
+        return self.conn.execute(
+            "SELECT status, resolved_at FROM entity_resolution_queue WHERE id = ?",
+            (queue_id,),
+        ).fetchone()
+
+    def _table_exists(self, table_name: str) -> bool:
+        return (
+            self.conn.execute(
+                """
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table' AND name = ?
+                """,
+                (table_name,),
+            ).fetchone()
+            is not None
+        )
+
+    def _audit_count(self) -> int:
+        if not self._table_exists("entity_resolution_audit"):
+            return 0
+        return int(self.conn.execute("SELECT COUNT(*) FROM entity_resolution_audit").fetchone()[0])
+
+
+class _ExistingConnection:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self.conn = conn
+
+    def __enter__(self) -> sqlite3.Connection:
+        return self.conn
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None
 
 
 if __name__ == "__main__":

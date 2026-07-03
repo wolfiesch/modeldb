@@ -86,7 +86,7 @@ def resolve_record(conn: sqlite3.Connection, source_model_record_id: int) -> int
     )
     return None
 
-def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) -> dict[str, int]:
+def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None, dry_run: bool = False) -> dict[str, int | bool]:
     """Materialize accepted review-queue rows into durable model aliases."""
 
     params: list[Any] = []
@@ -118,12 +118,19 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) 
         if not isinstance(candidates, list):
             candidates = []
 
-        alias_ids: list[int] = []
+        valid_aliases = [candidate.strip() for candidate in candidates if isinstance(candidate, str) and candidate.strip()]
+        if not valid_aliases:
+            skipped += 1
+            continue
         record = _load_source_record(conn, int(source_record_id))
-        for candidate in candidates:
-            if not isinstance(candidate, str) or not candidate.strip():
-                continue
-            alias_string = candidate.strip()
+        if dry_run:
+            aliases_upserted += len(valid_aliases)
+            records_updated += 1
+            processed += 1
+            continue
+
+        alias_ids: list[int] = []
+        for alias_string in valid_aliases:
             alias_id = upsert_alias(
                 conn,
                 source_id=record["source_id"],
@@ -138,9 +145,6 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) 
             alias_ids.append(alias_id)
             aliases_upserted += 1
 
-        if not alias_ids:
-            skipped += 1
-            continue
 
         conn.execute(
             "UPDATE source_model_record SET model_alias_id = ? WHERE id = ?",
@@ -174,6 +178,7 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) 
         "aliases_upserted": aliases_upserted,
         "records_updated": records_updated,
         "skipped": skipped,
+        "dry_run": dry_run,
     }
 
 def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model_id: int) -> dict[str, int]:
@@ -814,10 +819,15 @@ def _first_string(*objects: dict[str, Any], keys: tuple[str, ...]) -> str | None
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv == ["drain-accepted"]:
+    if argv and argv[0] == "drain-accepted":
+        if len(argv) > 2 or (len(argv) == 2 and argv[1] != "--dry-run"):
+            print("Usage: python -m resolve.resolver drain-accepted [--dry-run]")
+            return 2
+        dry_run = len(argv) == 2
         with connect() as conn:
-            summary = drain_accepted_queue(conn)
-            conn.commit()
+            summary = drain_accepted_queue(conn, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
     if argv and argv[0] == "accept":
@@ -849,7 +859,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(argv) != 1:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
         print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
-        print("       python -m resolve.resolver drain-accepted")
+        print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-report [source_id]")
         return 2
