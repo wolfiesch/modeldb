@@ -1,0 +1,14 @@
+[Unit]
+Description=Refresh modeldb TPS metrics and dashboard JSON
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=MODELDB_REPO=/srv/modeldb
+Environment=STATIC_DIR=/srv/agent-webhook-hub/static/models
+Environment=OMP_TPS_ALLOW_PAID=1
+Environment=OMP_TPS_RUNS=3
+Environment=OMP_TPS_TIMEOUT=120
+WorkingDirectory=/srv/modeldb
+ExecStart=/srv/modeldb/scripts/vps-refresh.sh
