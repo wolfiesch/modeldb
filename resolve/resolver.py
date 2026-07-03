@@ -409,6 +409,97 @@ def _ensure_review_aliases_available(
             raise ValueError(f"reviewed alias is already linked to model_id {existing[1]}: {alias}")
 
 
+def accept_organization_batch(
+    conn: sqlite3.Connection,
+    reviews: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create explicitly reviewed organization rows."""
+
+    conn.execute("SAVEPOINT accept_organization_batch")
+    try:
+        existing_identities = _existing_organization_identities(conn)
+        batch_identities: set[str] = set()
+        items = []
+        for review in reviews:
+            identities = _organization_review_identities(review)
+            organization_id = _required_text(review, "id")
+            if organization_id in existing_identities:
+                raise ValueError(f"organization already exists: {organization_id}")
+            collision = identities & existing_identities
+            if collision:
+                raise ValueError(f"organization identity already exists: {sorted(collision)[0]}")
+            duplicate = identities & batch_identities
+            if duplicate:
+                raise ValueError(f"duplicate organization identity in batch: {sorted(duplicate)[0]}")
+            batch_identities.update(identities)
+            items.append(_accept_organization_row(conn, review))
+        if dry_run:
+            conn.execute("ROLLBACK TO accept_organization_batch")
+        conn.execute("RELEASE accept_organization_batch")
+    except Exception:
+        conn.execute("ROLLBACK TO accept_organization_batch")
+        conn.execute("RELEASE accept_organization_batch")
+        raise
+    return {"created": len(items), "items": items, "dry_run": dry_run}
+
+
+def _accept_organization_row(conn: sqlite3.Connection, review: dict[str, Any]) -> dict[str, Any]:
+    organization_id = _required_text(review, "id")
+    if normalize_alias(organization_id) != organization_id:
+        raise ValueError("approval.id must already be normalized")
+    display_name = _required_text(review, "display_name")
+    country = _optional_text(review, "country")
+    aliases = _optional_text_list(review, "aliases")
+    existing = conn.execute("SELECT id FROM organization WHERE id = ?", (organization_id,)).fetchone()
+    if existing is not None:
+        raise ValueError(f"organization already exists: {organization_id}")
+    aliases_json = json.dumps(aliases, sort_keys=True, separators=(",", ":"))
+    conn.execute(
+        """
+        INSERT INTO organization (id, display_name, country, aliases_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        (organization_id, display_name, country, aliases_json),
+    )
+    return {
+        "id": organization_id,
+        "display_name": display_name,
+        "country": country,
+        "aliases": aliases,
+    }
+
+def _organization_review_identities(review: dict[str, Any]) -> set[str]:
+    organization_id = _required_text(review, "id")
+    if normalize_alias(organization_id) != organization_id:
+        raise ValueError("approval.id must already be normalized")
+    aliases = _optional_text_list(review, "aliases")
+    identities = [organization_id, *[normalize_alias(alias) for alias in aliases]]
+    if len(set(identities)) != len(identities):
+        raise ValueError(f"duplicate organization identity in review: {organization_id}")
+    return set(identities)
+
+
+def _existing_organization_identities(conn: sqlite3.Connection) -> set[str]:
+    identities: set[str] = set()
+    for organization_id, aliases_json in conn.execute("SELECT id, aliases_json FROM organization"):
+        identities.add(str(organization_id))
+        aliases = _loads_json_list(aliases_json)
+        for alias in aliases:
+            identities.add(normalize_alias(alias))
+    return identities
+
+
+def _loads_json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    loaded = json.loads(value)
+    if not isinstance(loaded, list):
+        return []
+    return [item for item in loaded if isinstance(item, str)]
+
+
 def _required_int(payload: dict[str, Any], key: str) -> int:
     value = payload.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -442,6 +533,20 @@ def _required_text_list(payload: dict[str, Any], key: str) -> list[str]:
         items.append(item.strip())
     if not items:
         raise ValueError(f"approval.{key} must be a non-empty string array")
+    return items
+
+
+def _optional_text_list(payload: dict[str, Any], key: str) -> list[str]:
+    value = payload.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"approval.{key} must be a string array when provided")
+    items = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"approval.{key} must be a string array when provided")
+        items.append(item.strip())
     return items
 
 
@@ -1299,6 +1404,29 @@ def main(argv: list[str] | None = None) -> int:
                 conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
+    if argv and argv[0] == "accept-organization-batch":
+        if len(argv) >= 2 and argv[1] == "--dry-run":
+            if len(argv) != 3:
+                print("Usage: python -m resolve.resolver accept-organization-batch [--dry-run] FILE.json")
+                return 2
+            dry_run = True
+            input_path = argv[2]
+        elif len(argv) == 2:
+            dry_run = False
+            input_path = argv[1]
+        else:
+            print("Usage: python -m resolve.resolver accept-organization-batch [--dry-run] FILE.json")
+            return 2
+        with open(input_path, encoding="utf-8") as file:
+            reviews = json.load(file)
+        if not isinstance(reviews, list):
+            raise ValueError("accept-organization-batch input must be a JSON array")
+        with connect() as conn:
+            summary = accept_organization_batch(conn, reviews, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+        print(json.dumps(summary, sort_keys=True))
+        return 0
     if argv and argv[0] == "options":
         if len(argv) != 2:
             print("Usage: python -m resolve.resolver options QUEUE_ID")
@@ -1362,6 +1490,7 @@ def main(argv: list[str] | None = None) -> int:
         print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
         print("       python -m resolve.resolver accept-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver accept-new-model-batch [--dry-run] FILE.json")
+        print("       python -m resolve.resolver accept-organization-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-export [--format csv|markdown] [--suggested-only] [source_id]")
