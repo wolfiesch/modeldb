@@ -50,8 +50,7 @@ export default function ThroughputCoinCanvas({ rows, highlightKey = null, onLane
   return (
     <div className="relative h-[620px] overflow-hidden rounded-[2rem] border border-amber-400/20 bg-[radial-gradient(circle_at_50%_0%,rgba(245,158,11,0.22),transparent_38%),linear-gradient(180deg,#17130b_0%,#050505_100%)] shadow-2xl shadow-amber-950/30">
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(251,191,36,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(251,191,36,0.05)_1px,transparent_1px)] bg-[size:44px_44px] opacity-40" />
-      <Canvas camera={{ position: [0, 3.2, 8], fov: 45 }} dpr={[1, 2]} frameloop={isPaused ? 'demand' : 'always'}>
-        <CameraTarget />
+      <Canvas camera={{ position: [0, 0, 8], fov: 45 }} dpr={[1, 2]} frameloop={isPaused ? 'demand' : 'always'}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[0, 6, 5]} intensity={1.6} color="#ffe4a3" />
         <pointLight position={[-4, 2, 3]} intensity={14} color="#f59e0b" distance={10} />
@@ -91,7 +90,7 @@ export default function ThroughputCoinCanvas({ rows, highlightKey = null, onLane
         ))}
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-28 bg-gradient-to-t from-black via-black/70 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex gap-1 px-3 sm:gap-2 sm:px-5">
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex gap-1 px-1 sm:gap-1.5 sm:px-1.5">
         <LaneLabel label="100 TPS reference" tps={100} color="#9ca3af" muted />
         {rows.map((row, index) => (
           <LaneLabel
@@ -106,15 +105,6 @@ export default function ThroughputCoinCanvas({ rows, highlightKey = null, onLane
       </div>
     </div>
   )
-}
-
-function CameraTarget() {
-  const camera = useThree((state) => state.camera)
-  useEffect(() => {
-    camera.lookAt(0, 0, 0)
-    camera.updateProjectionMatrix()
-  }, [camera])
-  return null
 }
 
 function CoinStream({
@@ -142,8 +132,14 @@ function CoinStream({
   const color = ghost ? '#9ca3af' : colorForDark(dev)
   const plan = coinPlanForThroughput(tps)
   const seeds = useMemo(() => makeSeeds(streamKey, plan.count), [plan.count, streamKey])
-  const x = (index - (total - 1) / 2) * 2.1
-
+  const viewport = useThree((state) => state.viewport)
+  const invalidate = useThree((state) => state.invalidate)
+  // Lane centers match the equal-width HTML label cells: viewport-fraction spacing
+  // instead of a fixed world-unit pitch, so labels line up with their streams.
+  const pitch = viewport.width / total
+  const x = (index + 0.5) * pitch - viewport.width / 2
+  const fallTop = viewport.height / 2 + 0.8
+  const fallTravel = viewport.height + 1.6
 
   const updateInstances = (elapsed: number) => {
     const mesh = meshRef.current
@@ -151,9 +147,9 @@ function CoinStream({
     mesh.count = plan.count
     for (let i = 0; i < plan.count; i += 1) {
       const seed = seeds[i]
-      const phase = seed.phase
-      const y = 5 - (((elapsed * plan.fallSpeed + phase) % 1) * 9.5)
-      dummy.position.set(x + seed.xJitter, y, seed.zJitter)
+      const sway = Math.sin(elapsed * (0.4 + seed.spin) + seed.phase * Math.PI * 2) * pitch * 0.06
+      const y = fallTop - (((elapsed * plan.fallSpeed + seed.phase) % 1) * fallTravel)
+      dummy.position.set(x + seed.xJitter * pitch * 0.78 + sway, y, seed.zJitter)
       dummy.rotation.set(elapsed * (0.7 + seed.spin), seed.tilt + elapsed * seed.spin, seed.roll)
       const scale = 0.76 + seed.scale * 0.56
       dummy.scale.setScalar(scale)
@@ -162,8 +158,6 @@ function CoinStream({
     }
     mesh.instanceMatrix.needsUpdate = true
   }
-
-  const invalidate = useThree((state) => state.invalidate)
 
   useEffect(() => {
     meshRef.current?.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
