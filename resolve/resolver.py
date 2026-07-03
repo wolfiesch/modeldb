@@ -266,6 +266,112 @@ def pending_queue_report(
     ordered_groups = sorted(groups.values(), key=lambda row: (-row["count"], row["provider"], row["family"]))
     return {"source_id": source_id, "total": len(rows), "groups": ordered_groups}
 
+def queue_candidate_options(conn: sqlite3.Connection, queue_id: int, *, limit: int = 10) -> dict[str, Any]:
+    """Return read-only candidate model options for one pending review row."""
+
+    row = conn.execute(
+        """
+        SELECT erq.id, erq.source_record_id, erq.features_json,
+               erq.status, erq.candidate_model_id, erq.resolved_at,
+               smr.source_model_id, smr.display_name, ss.source_id
+        FROM entity_resolution_queue erq
+        JOIN source_model_record smr ON smr.id = erq.source_record_id
+        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+        WHERE erq.id = ?
+          AND erq.status = 'pending'
+          AND erq.resolved_at IS NULL
+          AND erq.candidate_model_id IS NULL
+        """,
+        (queue_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"pending null-candidate queue row not found: {queue_id}")
+    features = _loads_json(row[2])
+    provider = _text_or_unknown(features.get("model_creator_slug"))
+    candidates = _string_list(features.get("provider_scoped_candidates"))
+    first_candidate = candidates[0] if candidates else ""
+    family = _queue_candidate_family(provider, first_candidate)
+    candidate_set = set(candidates)
+
+    options: list[dict[str, Any]] = []
+    for model_id, canonical_slug, developer_id, alias_norms_text in conn.execute(
+        """
+        SELECT m.id, m.canonical_slug, m.developer_id,
+               GROUP_CONCAT(ma.alias_normalized, ',') AS alias_norms
+        FROM model m
+        LEFT JOIN model_alias ma ON ma.model_id = m.id
+        GROUP BY m.id, m.canonical_slug, m.developer_id
+        """
+    ):
+        canonical_norm = normalize_alias(canonical_slug)
+        alias_norms = set(alias_norms_text.split(",")) if alias_norms_text else set()
+        score, reason = _queue_option_score(
+            provider=provider,
+            family=family,
+            candidates=candidate_set,
+            canonical_norm=canonical_norm,
+            alias_norms=alias_norms,
+            developer_id=developer_id,
+        )
+        matched_norms = sorted({canonical_norm, *alias_norms} & candidate_set)
+        matched_label = matched_norms[0] if matched_norms else family
+        match = f"{reason}: {matched_label} -> {canonical_slug}"
+        if score <= 0:
+            continue
+        options.append(
+            {
+                "model_id": int(model_id),
+                "canonical_slug": canonical_slug,
+                "developer_id": developer_id,
+                "score": score,
+                "match": match,
+            }
+        )
+
+    options.sort(key=lambda item: (-item["score"], item["canonical_slug"]))
+    return {
+        "queue_id": int(row[0]),
+        "source_record_id": int(row[1]),
+        "source_id": row[8],
+        "status": row[3],
+        "candidate_model_id": row[4],
+        "resolved_at": row[5],
+        "source_model_id": row[6],
+        "model_name": features.get("model_name") or row[7],
+        "slug": features.get("slug"),
+        "provider": provider,
+        "family": family,
+        "first_candidate": first_candidate or None,
+        "candidate_count": len(candidates),
+        "options": options[:limit],
+    }
+
+
+def _queue_option_score(
+    *,
+    provider: str,
+    family: str,
+    candidates: set[str],
+    canonical_norm: str,
+    alias_norms: set[str],
+    developer_id: str | None,
+) -> tuple[int, str]:
+    provider_match = developer_id == provider
+    if not provider_match:
+        return (0, "")
+
+    all_norms = {canonical_norm, *alias_norms}
+    if all_norms & candidates:
+        return (110, "exact_provider_scoped_alias")
+
+    provider_family = f"{provider}-{family}" if provider != "unknown" else family
+    if canonical_norm == provider_family or provider_family in alias_norms:
+        return (80, "provider_family")
+    if canonical_norm.endswith(f"-{family}") or family in alias_norms:
+        return (60, "developer_family")
+    return (0, "")
+
+
 
 def _queue_candidate_family(provider: str, candidate: str) -> str:
     if not candidate:
@@ -655,6 +761,14 @@ def main(argv: list[str] | None = None) -> int:
             conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
+    if argv and argv[0] == "options":
+        if len(argv) != 2:
+            print("Usage: python -m resolve.resolver options QUEUE_ID")
+            return 2
+        with connect() as conn:
+            options = queue_candidate_options(conn, queue_id=int(argv[1]))
+        print(json.dumps(options, sort_keys=True))
+        return 0
     if argv and argv[0] == "queue-report":
         if len(argv) > 2:
             print("Usage: python -m resolve.resolver queue-report [source_id]")
@@ -668,6 +782,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
         print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
         print("       python -m resolve.resolver drain-accepted")
+        print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-report [source_id]")
         return 2
     with connect() as conn:
