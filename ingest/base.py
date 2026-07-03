@@ -116,4 +116,17 @@ class SourceParser:
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
+    _ensure_model_display_name_column(conn)
     return conn
+
+
+def _ensure_model_display_name_column(conn: sqlite3.Connection) -> None:
+    model = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model'"
+    ).fetchone()
+    if model is None:
+        return
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(model)")}
+    if "display_name" not in columns:
+        conn.execute("ALTER TABLE model ADD COLUMN display_name TEXT")
+        conn.commit()

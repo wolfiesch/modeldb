@@ -18,6 +18,10 @@ if (!existsSync(DB_PATH)) {
 mkdirSync(OUT_DIR, { recursive: true })
 
 const db = new Database(DB_PATH) // NOT {readonly:true} — see header
+const modelColumns = new Set(db.query('PRAGMA table_info(model)').all().map((row) => row.name))
+if (!modelColumns.has('display_name')) {
+  db.run('ALTER TABLE model ADD COLUMN display_name TEXT')
+}
 const q = (sql, params = []) => db.query(sql).all(...params)
 const OMP_TPS_BENCHMARK_ID = 'omp_visible_output_tokens_per_second'
 
@@ -217,15 +221,15 @@ function parseModalities(text) {
 
 const models = q(
   `SELECT m.id, m.canonical_slug, m.developer_id, o.display_name AS dev_name,
-          m.family, m.generation, m.tier_or_variant, m.parameter_scale,
-          m.training_role, m.release_date, m.knowledge_cutoff, m.stability,
-          m.open_weights
+          m.display_name, m.family, m.generation, m.tier_or_variant,
+          m.parameter_scale, m.training_role, m.release_date,
+          m.knowledge_cutoff, m.stability, m.open_weights
    FROM model m LEFT JOIN organization o ON o.id = m.developer_id
    ORDER BY m.canonical_slug`
 ).map((m) => ({
   id: m.id,
   slug: m.canonical_slug,
-  name: shortName(m.canonical_slug),
+  name: m.display_name ?? shortName(m.canonical_slug),
   dev: m.developer_id,
   devName: m.dev_name,
   family: m.family,

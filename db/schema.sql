@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS model (
   knowledge_cutoff    TEXT,
   stability           TEXT,                       -- 'pinned','latest_alias','preview','deprecated','retired'
   open_weights        INTEGER,                    -- 0/1/NULL
+  display_name        TEXT,                       -- reviewed/public display name when slug derivation is lossy
   canonical_confidence TEXT,                      -- 'verified','probable','manual_review'
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL

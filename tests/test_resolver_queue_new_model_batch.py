@@ -53,6 +53,7 @@ class AcceptNewModelBatchTests(unittest.TestCase):
                 knowledge_cutoff TEXT,
                 stability TEXT,
                 open_weights INTEGER,
+                display_name TEXT,
                 canonical_confidence TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -243,6 +244,26 @@ class AcceptNewModelBatchTests(unittest.TestCase):
         self.assertEqual(details["aliases"], ["kimi-k2-turbo", "moonshotai/kimi-k2-turbo"])
         self.assertEqual(set(details["model_alias_ids"]), {row[0] for row in aliases})
 
+
+    def test_reviewed_display_name_is_stored_on_created_model(self) -> None:
+        source_record_id = self._insert_source_record()
+        queue_id = self._insert_queue_row(source_record_id)
+        review = self._new_model_review(queue_id)
+        review["canonical_slug"] = "moonshotai/kimi-k2-turbo-3-5"
+        review["display_name"] = "Kimi K2 Turbo 3.5"
+        review["aliases"] = ["kimi-k2-turbo-3-5", "moonshotai/kimi-k2-turbo-3-5"]
+
+        with patch.object(resolver, "utcnow", return_value=FROZEN_NOW):
+            summary = resolver.accept_new_model_batch(self.conn, [review], dry_run=False)
+
+        created_model_id = summary["items"][0]["model_id"]
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT display_name FROM model WHERE id = ?",
+                (created_model_id,),
+            ).fetchone()[0],
+            "Kimi K2 Turbo 3.5",
+        )
     def test_alias_collision_refuses_new_model_without_mutating_review_state(self) -> None:
         source_record_id = self._insert_source_record()
         queue_id = self._insert_queue_row(source_record_id)

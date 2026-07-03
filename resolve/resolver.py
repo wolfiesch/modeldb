@@ -287,6 +287,7 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
     aliases = _required_text_list(review, "aliases")
     family = _optional_text(review, "family")
     tier_or_variant = _optional_text(review, "tier_or_variant")
+    display_name = _optional_text(review, "display_name")
 
     if not canonical_slug.startswith(f"{developer_id}/"):
         raise ValueError("approval.canonical_slug must start with approval.developer_id + '/'")
@@ -324,11 +325,11 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
     model_cursor = conn.execute(
         """
         INSERT INTO model (
-          canonical_slug, developer_id, family, tier_or_variant,
+          canonical_slug, developer_id, family, tier_or_variant, display_name,
           canonical_confidence, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'manual_review', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, 'manual_review', ?, ?)
         """,
-        (canonical_slug, developer_id, family, tier_or_variant, now, now),
+        (canonical_slug, developer_id, family, tier_or_variant, display_name, now, now),
     )
     model_id = int(model_cursor.lastrowid)
 
