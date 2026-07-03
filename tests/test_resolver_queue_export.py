@@ -165,6 +165,78 @@ class QueueReviewExportTests(unittest.TestCase):
         self.assertRegex(data_row, r'"queue_id"\s*:\s*201')
         self.assertRegex(data_row, r'"candidate_model_id"\s*:\s*1')
 
+
+    def test_csv_export_keeps_suggested_and_unsuggested_rows_by_default(self) -> None:
+        self._insert_pending_aa_row_with_matching_option()
+        self._insert_pending_aa_row_without_matching_options()
+
+        csv_text = resolver.queue_review_export(self.conn, source_id="artificialanalysis", format="csv")
+        rows, _ = self._read_csv_export(csv_text)
+
+        self.assertEqual([row["queue_id"] for row in rows], ["201", "202"])
+        self.assertEqual(
+            json.loads(rows[0]["suggested_approval_json"]),
+            {"queue_id": 201, "candidate_model_id": 1},
+        )
+        self.assertEqual(rows[1]["suggested_approval_json"], "")
+
+    def test_csv_export_with_suggested_only_filters_blank_suggestions(self) -> None:
+        self._insert_pending_aa_row_with_matching_option()
+        self._insert_pending_aa_row_without_matching_options()
+
+        csv_text = resolver.queue_review_export(
+            self.conn,
+            source_id="artificialanalysis",
+            format="csv",
+            suggested_only=True,
+        )
+        rows, _ = self._read_csv_export(csv_text)
+
+        self.assertEqual([row["queue_id"] for row in rows], ["201"])
+        self.assertEqual(
+            json.loads(rows[0]["suggested_approval_json"]),
+            {"queue_id": 201, "candidate_model_id": 1},
+        )
+
+    def test_queue_export_cli_suggested_only_prints_csv_for_suggested_rows(self) -> None:
+        self._insert_pending_aa_row_with_matching_option()
+        self._insert_pending_aa_row_without_matching_options()
+        stdout = io.StringIO()
+
+        with patch.object(resolver, "connect", return_value=_ExistingConnection(self.conn)):
+            with redirect_stdout(stdout):
+                exit_code = resolver.main(["queue-export", "--suggested-only"])
+
+        rows, fieldnames = self._read_csv_export(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertIn("suggested_approval_json", fieldnames)
+        self.assertEqual([row["queue_id"] for row in rows], ["201"])
+        self.assertEqual(
+            json.loads(rows[0]["suggested_approval_json"]),
+            {"queue_id": 201, "candidate_model_id": 1},
+        )
+
+    def test_markdown_export_with_suggested_only_filters_blank_suggestions(self) -> None:
+        self._insert_pending_aa_row_with_matching_option()
+        self._insert_pending_aa_row_without_matching_options()
+
+        markdown = resolver.queue_review_export(
+            self.conn,
+            source_id="artificialanalysis",
+            format="markdown",
+            suggested_only=True,
+        )
+
+        table_lines = [line for line in markdown.splitlines() if line.startswith("|")]
+        self.assertEqual(len(table_lines), 3)
+        self.assertIn("| suggested_approval_json |", table_lines[0])
+        [data_row] = table_lines[2:]
+        self.assertIn("| 201 |", data_row)
+        self.assertIn("Qwen3.5 122B A10B Non-Reasoning", data_row)
+        self.assertRegex(data_row, r'"candidate_model_id"\s*:\s*1')
+        self.assertNotIn("202", data_row)
+        self.assertNotIn("Mystery Model Preview", data_row)
+
     def test_csv_export_keeps_pending_rows_without_options_and_leaves_approval_blank(self) -> None:
         self._insert_pending_aa_row_with_matching_option()
         self._insert_pending_aa_row_without_matching_options()

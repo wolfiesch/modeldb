@@ -433,10 +433,13 @@ def queue_review_export(
     source_id: str = "artificialanalysis",
     format: str = "csv",
     approval_threshold: int = 80,
+    suggested_only: bool = False,
 ) -> str:
     """Export pending review rows for manual queue approval."""
 
     rows = _queue_review_rows(conn, source_id=source_id, approval_threshold=approval_threshold)
+    if suggested_only:
+        rows = [row for row in rows if row["suggested_approval_json"]]
     if format == "csv":
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=_QUEUE_EXPORT_FIELDS)
@@ -1006,18 +1009,27 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv and argv[0] == "queue-export":
         export_format = "csv"
+        suggested_only = False
         args = argv[1:]
+        if "--suggested-only" in args:
+            suggested_only = True
+            args = [arg for arg in args if arg != "--suggested-only"]
         if args[:2] == ["--format", "markdown"]:
             export_format = "markdown"
             args = args[2:]
         elif args[:2] == ["--format", "csv"]:
             args = args[2:]
         if len(args) > 1:
-            print("Usage: python -m resolve.resolver queue-export [--format csv|markdown] [source_id]")
+            print("Usage: python -m resolve.resolver queue-export [--format csv|markdown] [--suggested-only] [source_id]")
             return 2
         source_id = args[0] if args else "artificialanalysis"
         with connect() as conn:
-            export = queue_review_export(conn, source_id=source_id, format=export_format)
+            export = queue_review_export(
+                conn,
+                source_id=source_id,
+                format=export_format,
+                suggested_only=suggested_only,
+            )
         print(export, end="")
         return 0
     if argv and argv[0] == "queue-report":
@@ -1035,7 +1047,7 @@ def main(argv: list[str] | None = None) -> int:
         print("       python -m resolve.resolver accept-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
-        print("       python -m resolve.resolver queue-export [--format csv|markdown] [source_id]")
+        print("       python -m resolve.resolver queue-export [--format csv|markdown] [--suggested-only] [source_id]")
         print("       python -m resolve.resolver queue-report [source_id]")
         return 2
     with connect() as conn:
