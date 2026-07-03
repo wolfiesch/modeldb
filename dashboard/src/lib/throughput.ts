@@ -59,7 +59,7 @@ export function buildThroughputRows(
   local: ThroughputFile | null,
   options?: { maxRows?: number; source?: 'all' | 'local_omp' | 'artificialanalysis' },
 ): ThroughputRow[] {
-  const maxRows = options?.maxRows ?? 8
+  const maxRows = options?.maxRows ?? 40
   const source = options?.source ?? 'all'
   const rows: ThroughputRow[] = []
   const modelById = new Map(models.map((model) => [model.id, model]))

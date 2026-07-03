@@ -29,7 +29,7 @@ export default function TpsStreams() {
   const rows = useMemo(() => {
     if (!models || !enrichment) return []
     return buildThroughputRows(models, enrichment, throughputMissing ? null : (throughput ?? null), {
-      maxRows: 8,
+      maxRows: 40,
       source: sourceFilter,
     })
   }, [enrichment, models, sourceFilter, throughput, throughputMissing])
@@ -95,7 +95,7 @@ export default function TpsStreams() {
         </div>
       ) : (
         <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <div className="rounded-[2rem] border border-neutral-800 bg-neutral-900/70 p-3">
+          <div className="rounded-[2rem] border border-neutral-800 bg-neutral-900/70 p-3 max-h-[660px] overflow-y-auto pr-1">
             <div className="px-3 pb-3 pt-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-neutral-500">
               Select lanes
             </div>
