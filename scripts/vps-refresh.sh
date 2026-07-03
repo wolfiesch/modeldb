@@ -2,7 +2,7 @@
 set -euo pipefail
 
 MODELDB_REPO=${MODELDB_REPO:-$(cd "$(dirname "$0")/.." && pwd)}
-STATIC_DIR=${STATIC_DIR:-/srv/agent-webhook-hub/static/models}
+STATIC_DIR=${STATIC_DIR:-/srv/static/models}
 
 cd "$MODELDB_REPO"
 python3 -m store.pipeline
