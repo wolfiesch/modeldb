@@ -259,12 +259,161 @@ def accept_queue_batch(
         raise
     return {"accepted": len(items), "items": items, "dry_run": dry_run}
 
+def accept_new_model_batch(
+    conn: sqlite3.Connection,
+    reviews: list[dict[str, Any]],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create explicitly reviewed canonical models and attach reviewed source aliases."""
+
+    conn.execute("SAVEPOINT accept_new_model_batch")
+    try:
+        items = [_accept_new_model_row(conn, review) for review in reviews]
+        if dry_run:
+            conn.execute("ROLLBACK TO accept_new_model_batch")
+        conn.execute("RELEASE accept_new_model_batch")
+    except Exception:
+        conn.execute("ROLLBACK TO accept_new_model_batch")
+        conn.execute("RELEASE accept_new_model_batch")
+        raise
+    return {"created": len(items), "items": items, "dry_run": dry_run}
+
+
+def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> dict[str, Any]:
+    queue_id = _required_int(review, "queue_id")
+    canonical_slug = _required_text(review, "canonical_slug")
+    developer_id = _required_text(review, "developer_id")
+    aliases = _required_text_list(review, "aliases")
+    family = _optional_text(review, "family")
+    tier_or_variant = _optional_text(review, "tier_or_variant")
+
+    if not canonical_slug.startswith(f"{developer_id}/"):
+        raise ValueError("approval.canonical_slug must start with approval.developer_id + '/'")
+
+    existing = conn.execute("SELECT id FROM model WHERE canonical_slug = ?", (canonical_slug,)).fetchone()
+    if existing is not None:
+        raise ValueError(f"model already exists for canonical_slug: {canonical_slug}; use accept-batch with that model_id")
+    organization = conn.execute("SELECT id FROM organization WHERE id = ?", (developer_id,)).fetchone()
+    if organization is None:
+        raise ValueError(f"organization not found for developer_id: {developer_id}")
+
+
+    row = conn.execute(
+        """
+        SELECT erq.source_record_id, erq.status, erq.resolved_at, erq.candidate_model_id,
+               smr.model_alias_id, ss.source_id, smr.source_snapshot_id
+        FROM entity_resolution_queue erq
+        JOIN source_model_record smr ON smr.id = erq.source_record_id
+        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
+        WHERE erq.id = ?
+        """,
+        (queue_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"queue row not found: {queue_id}")
+    if row[1] != "pending" or row[2] is not None or row[3] is not None:
+        raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
+    if row[4] is not None:
+        raise ValueError(f"source record is already linked: {row[0]}")
+
+    now = utcnow()
+    model_cursor = conn.execute(
+        """
+        INSERT INTO model (
+          canonical_slug, developer_id, family, tier_or_variant,
+          canonical_confidence, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'manual_review', ?, ?)
+        """,
+        (canonical_slug, developer_id, family, tier_or_variant, now, now),
+    )
+    model_id = int(model_cursor.lastrowid)
+
+    alias_ids = [
+        upsert_alias(
+            conn,
+            source_id=str(row[5]),
+            alias_string=alias,
+            alias_normalized=normalize_alias(alias),
+            alias_kind="api_model_id",
+            model_id=model_id,
+            resolution_method="manual_review",
+            confidence=1.0,
+            source_snapshot_id=int(row[6]),
+        )
+        for alias in aliases
+    ]
+    conn.execute(
+        "UPDATE source_model_record SET model_alias_id = ? WHERE id = ?",
+        (alias_ids[0], int(row[0])),
+    )
+    conn.execute(
+        """
+        UPDATE entity_resolution_queue
+        SET candidate_model_id = ?,
+            status = 'resolved',
+            resolved_at = ?
+        WHERE id = ?
+        """,
+        (model_id, now, queue_id),
+    )
+    _insert_queue_audit(
+        conn,
+        queue_id=queue_id,
+        source_record_id=int(row[0]),
+        candidate_model_id=model_id,
+        action="new_model",
+        details={
+            "canonical_slug": canonical_slug,
+            "developer_id": developer_id,
+            "aliases": aliases,
+            "model_alias_ids": alias_ids,
+        },
+    )
+    return {
+        "queue_id": queue_id,
+        "source_record_id": int(row[0]),
+        "model_id": model_id,
+        "canonical_slug": canonical_slug,
+        "developer_id": developer_id,
+        "model_alias_ids": alias_ids,
+    }
+
 
 def _required_int(payload: dict[str, Any], key: str) -> int:
     value = payload.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"approval.{key} must be an integer")
     return value
+
+def _required_text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"approval.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _optional_text(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"approval.{key} must be a non-empty string when provided")
+    return value.strip()
+
+
+def _required_text_list(payload: dict[str, Any], key: str) -> list[str]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        raise ValueError(f"approval.{key} must be a non-empty string array")
+    items = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"approval.{key} must be a non-empty string array")
+        items.append(item.strip())
+    if not items:
+        raise ValueError(f"approval.{key} must be a non-empty string array")
+    return items
 
 
 
@@ -1098,6 +1247,29 @@ def main(argv: list[str] | None = None) -> int:
                 conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
+    if argv and argv[0] == "accept-new-model-batch":
+        if len(argv) >= 2 and argv[1] == "--dry-run":
+            if len(argv) != 3:
+                print("Usage: python -m resolve.resolver accept-new-model-batch [--dry-run] FILE.json")
+                return 2
+            dry_run = True
+            input_path = argv[2]
+        elif len(argv) == 2:
+            dry_run = False
+            input_path = argv[1]
+        else:
+            print("Usage: python -m resolve.resolver accept-new-model-batch [--dry-run] FILE.json")
+            return 2
+        with open(input_path, encoding="utf-8") as file:
+            reviews = json.load(file)
+        if not isinstance(reviews, list):
+            raise ValueError("accept-new-model-batch input must be a JSON array")
+        with connect() as conn:
+            summary = accept_new_model_batch(conn, reviews, dry_run=dry_run)
+            if not dry_run:
+                conn.commit()
+        print(json.dumps(summary, sort_keys=True))
+        return 0
     if argv and argv[0] == "options":
         if len(argv) != 2:
             print("Usage: python -m resolve.resolver options QUEUE_ID")
@@ -1160,6 +1332,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
         print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
         print("       python -m resolve.resolver accept-batch [--dry-run] FILE.json")
+        print("       python -m resolve.resolver accept-new-model-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-export [--format csv|markdown] [--suggested-only] [source_id]")
