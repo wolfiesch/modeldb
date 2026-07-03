@@ -126,6 +126,16 @@ CREATE TABLE IF NOT EXISTS entity_resolution_queue (
   resolved_at      TEXT
 );
 
+CREATE TABLE IF NOT EXISTS entity_resolution_audit (
+  id                 INTEGER PRIMARY KEY,
+  queue_id           INTEGER NOT NULL REFERENCES entity_resolution_queue(id),
+  source_record_id   INTEGER REFERENCES source_model_record(id),
+  candidate_model_id INTEGER REFERENCES model(id),
+  action             TEXT NOT NULL, -- 'accept','drain'
+  details_json       TEXT NOT NULL,
+  created_at         TEXT NOT NULL
+);
+
 -- ---------------------------------------------------------------------------
 -- Raw per-source records (one row per model as that source sees it)
 -- ---------------------------------------------------------------------------

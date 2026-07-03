@@ -155,6 +155,18 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None) 
             """,
             (utcnow(), int(queue_id)),
         )
+        _insert_queue_audit(
+            conn,
+            queue_id=int(queue_id),
+            source_record_id=int(source_record_id),
+            candidate_model_id=int(candidate_model_id),
+            action="drain",
+            details={
+                "alias_ids": alias_ids,
+                "alias_count": len(alias_ids),
+                "model_alias_id": alias_ids[0],
+            },
+        )
         processed += 1
 
     return {
@@ -173,7 +185,7 @@ def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model
 
     row = conn.execute(
         """
-        SELECT id, status, resolved_at, candidate_model_id
+        SELECT id, source_record_id, status, resolved_at, candidate_model_id, features_json
         FROM entity_resolution_queue
         WHERE id = ?
         """,
@@ -181,7 +193,7 @@ def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model
     ).fetchone()
     if row is None:
         raise ValueError(f"queue row not found: {queue_id}")
-    if row[1] != "pending" or row[2] is not None or row[3] is not None:
+    if row[2] != "pending" or row[3] is not None or row[4] is not None:
         raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
 
     cursor = conn.execute(
@@ -198,6 +210,19 @@ def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model
     )
     if cursor.rowcount != 1:
         raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
+    _insert_queue_audit(
+        conn,
+        queue_id=queue_id,
+        source_record_id=int(row[1]),
+        candidate_model_id=candidate_model_id,
+        action="accept",
+        details={
+            "prior_status": row[2],
+            "prior_candidate_model_id": row[4],
+            "prior_resolved_at": row[3],
+        },
+    )
+
     return {"accepted": 1, "queue_id": queue_id, "candidate_model_id": candidate_model_id}
 
 
@@ -400,6 +425,49 @@ def _text_or_unknown(value: Any) -> str:
     return value.strip() if isinstance(value, str) and value.strip() else "unknown"
 
 
+
+
+def _insert_queue_audit(
+    conn: sqlite3.Connection,
+    *,
+    queue_id: int,
+    source_record_id: int,
+    candidate_model_id: int | None,
+    action: str,
+    details: dict[str, Any],
+) -> None:
+    _ensure_queue_audit_table(conn)
+    conn.execute(
+        """
+        INSERT INTO entity_resolution_audit (
+          queue_id, source_record_id, candidate_model_id, action, details_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            queue_id,
+            source_record_id,
+            candidate_model_id,
+            action,
+            json.dumps(details, sort_keys=True),
+            utcnow(),
+        ),
+    )
+
+
+def _ensure_queue_audit_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS entity_resolution_audit (
+          id                 INTEGER PRIMARY KEY,
+          queue_id           INTEGER NOT NULL REFERENCES entity_resolution_queue(id),
+          source_record_id   INTEGER REFERENCES source_model_record(id),
+          candidate_model_id INTEGER REFERENCES model(id),
+          action             TEXT NOT NULL,
+          details_json       TEXT NOT NULL,
+          created_at         TEXT NOT NULL
+        )
+        """
+    )
 
 
 def upsert_alias(
