@@ -245,23 +245,34 @@ interface CoinSeed {
 
 function makeSeeds(key: string, count: number): CoinSeed[] {
   let state = hashString(key)
-  return Array.from({ length: count }, () => {
+  const nextRand = () => {
     state = nextState(state)
-    const phase = state / 0xffffffff
-    state = nextState(state)
-    const xJitter = (state / 0xffffffff - 0.5) * 0.9
-    state = nextState(state)
-    const zJitter = (state / 0xffffffff - 0.5) * 1.2
-    state = nextState(state)
-    const spin = state / 0xffffffff
-    state = nextState(state)
-    const tilt = (state / 0xffffffff) * Math.PI
-    state = nextState(state)
-    const roll = (state / 0xffffffff) * Math.PI
-    state = nextState(state)
-    const scale = state / 0xffffffff
+    return state / 0xffffffff
+  }
+
+  const seeds = Array.from({ length: count }, (_, i) => {
+    // Stratify phase: divide [0, 1) phase space into equal strata
+    // so that coins are spaced evenly along the stream length with no clumping.
+    const phase = (i + nextRand()) / count
+    const xJitter = (nextRand() - 0.5) * 0.9
+    const zJitter = (nextRand() - 0.5) * 1.2
+    const spin = nextRand()
+    const tilt = nextRand() * Math.PI
+    const roll = nextRand() * Math.PI
+    const scale = nextRand()
     return { phase, xJitter, zJitter, spin, tilt, roll, scale }
   })
+
+  // Shuffle array using Durstenfeld algorithm with seeded PRNG to randomize
+  // depth sorting and rendering order.
+  for (let i = count - 1; i > 0; i -= 1) {
+    const j = Math.floor(nextRand() * (i + 1))
+    const temp = seeds[i]
+    seeds[i] = seeds[j]
+    seeds[j] = temp
+  }
+
+  return seeds
 }
 
 function hashString(value: string): number {
