@@ -316,6 +316,9 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
         raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
     if row[4] is not None:
         raise ValueError(f"source record is already linked: {row[0]}")
+    source_id = str(row[5])
+    _ensure_review_aliases_available(conn, source_id=source_id, aliases=aliases)
+
 
     now = utcnow()
     model_cursor = conn.execute(
@@ -332,7 +335,7 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
     alias_ids = [
         upsert_alias(
             conn,
-            source_id=str(row[5]),
+            source_id=source_id,
             alias_string=alias,
             alias_normalized=normalize_alias(alias),
             alias_kind="api_model_id",
@@ -378,6 +381,32 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
         "developer_id": developer_id,
         "model_alias_ids": alias_ids,
     }
+
+def _ensure_review_aliases_available(
+    conn: sqlite3.Connection,
+    *,
+    source_id: str,
+    aliases: list[str],
+) -> None:
+    seen = set()
+    for alias in aliases:
+        key = normalize_alias(alias)
+        if key in seen:
+            raise ValueError(f"duplicate reviewed alias: {alias}")
+        seen.add(key)
+        existing = conn.execute(
+            """
+            SELECT id, model_id
+            FROM model_alias
+            WHERE source_id = ?
+              AND alias_string = ?
+              AND alias_kind = 'api_model_id'
+              AND COALESCE(valid_from, '') = ''
+            """,
+            (source_id, alias),
+        ).fetchone()
+        if existing is not None and existing[1] is not None:
+            raise ValueError(f"reviewed alias is already linked to model_id {existing[1]}: {alias}")
 
 
 def _required_int(payload: dict[str, Any], key: str) -> int:

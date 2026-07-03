@@ -243,6 +243,53 @@ class AcceptNewModelBatchTests(unittest.TestCase):
         self.assertEqual(details["aliases"], ["kimi-k2-turbo", "moonshotai/kimi-k2-turbo"])
         self.assertEqual(set(details["model_alias_ids"]), {row[0] for row in aliases})
 
+    def test_alias_collision_refuses_new_model_without_mutating_review_state(self) -> None:
+        source_record_id = self._insert_source_record()
+        queue_id = self._insert_queue_row(source_record_id)
+        self.conn.execute(
+            """
+            INSERT INTO model_alias (
+                id, source_id, alias_string, alias_normalized, alias_kind, model_id,
+                resolution_method, confidence, source_snapshot_id, first_seen_at, last_seen_at
+            ) VALUES (
+                301, 'artificialanalysis', 'kimi-k2-turbo', 'kimi-k2-turbo',
+                'api_model_id', 1, 'manual_review', 1.0, 201,
+                '2026-07-02T19:00:00+00:00', '2026-07-02T19:00:00+00:00'
+            )
+            """
+        )
+        review = self._new_model_review(queue_id)
+        before = self._state_snapshot()
+
+        with self.assertRaises(ValueError):
+            resolver.accept_new_model_batch(self.conn, [review], dry_run=False)
+
+        self.assertEqual(self._state_snapshot(), before)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM model WHERE id <> 1").fetchone()[0],
+            0,
+        )
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT model_id FROM model_alias WHERE id = 301"
+            ).fetchone()[0],
+            1,
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT model_alias_id FROM source_model_record WHERE id = ?",
+                (source_record_id,),
+            ).fetchone()[0]
+        )
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT candidate_model_id, status, resolved_at FROM entity_resolution_queue WHERE id = ?",
+                (queue_id,),
+            ).fetchone(),
+            (None, "pending", None),
+        )
+        self.assertEqual(self._audit_rows(), [])
+
     def test_invalid_reviews_missing_required_canonical_developer_or_aliases_refuse_without_mutation(self) -> None:
         for name, invalid_fields in [
             ("missing canonical_slug", {"canonical_slug": None}),
