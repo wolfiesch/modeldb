@@ -2,6 +2,8 @@
 db/modeldb.sqlite
 db/modeldb.sqlite-wal
 db/modeldb.sqlite-shm
+db/backups/
+
 
 # Append-only raw snapshots (large; regenerable)
 data/raw/
@@ -21,6 +23,8 @@ __pycache__/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+.perf/
+
 
 # Node deps (declared in package.json + bun.lock)
 node_modules/

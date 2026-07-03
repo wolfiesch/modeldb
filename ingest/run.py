@@ -43,6 +43,7 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
     ParserSpec("openvlm", "ingest.sources.openvlm", "OpenVLMParser"),
     ParserSpec("bigcodebench", "ingest.sources.bigcodebench", "BigCodeBenchParser"),
     ParserSpec("mteb", "ingest.sources.mteb", "MTEBParser"),
+    ParserSpec("omp_speedtest", "ingest.sources.omp_speedtest", "OMPSpeedtestParser"),
     ParserSpec("anthropic_api", "ingest.sources.anthropic_api", "AnthropicAPIParser"),
     ParserSpec("openai_api", "ingest.sources.openai_api", "OpenAIAPIParser"),
     ParserSpec("gemini_api", "ingest.sources.gemini_api", "GeminiAPIParser"),
@@ -56,7 +57,7 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
 # Live MTEB results are official HF parquet shards. Keep the parser discoverable
 # for explicit aggregate JSON/CSV imports, but do not include it in the default
 # stdlib-only `all` run.
-EXCLUDE_FROM_ALL = {"mteb"}
+EXCLUDE_FROM_ALL = {"mteb", "omp_speedtest"}
 
 
 class ParserUnavailable(RuntimeError):

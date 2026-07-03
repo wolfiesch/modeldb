@@ -36,4 +36,5 @@ INSERT OR REPLACE INTO source (id, name, base_url, ingestion_class, auth_type, u
 
 -- Convenience / non-authoritative
 ('lmarena_mirror','arena-ai community mirror', 'https://api.wulong.dev/arena-ai-leaderboards/v1/leaderboards',               'A', 'none',    'daily',        'Clean JSON incl. agent arena (not in official HF dataset). Convenience/smoke-test only; non-authoritative.'),
-('scale_seal',   'Scale SEAL leaderboards',    'https://labs.scale.com/leaderboard',                                         'D', 'none',    'live',         'Next/RSC embedded. High signal, scrape-only/fragile. Defer.');
+('scale_seal',   'Scale SEAL leaderboards',    'https://labs.scale.com/leaderboard',                                         'D', 'none',    'live',         'Next/RSC embedded. High signal, scrape-only/fragile. Defer.'),
+('omp_speedtest', 'OMP local speedtest', 'local:~/.omp/agent/skills/omp-model-speedtest/scripts/omp_speedtest.py', 'A', 'local_auth', 'daily', 'Local bounded OMP speedtest JSON. Stores visible-output TPS from subscription or configured provider routes. Billing-sensitive; runner requires OMP_TPS_ALLOW_PAID=1.');

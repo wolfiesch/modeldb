@@ -11,6 +11,7 @@ const PAGES = [
   { label: 'Consensus matrix', path: '/consensus' },
   { label: 'Speed vs Quality', path: '/efficiency' },
   { label: 'Benchmarks', path: '/benchmarks' },
+  { label: 'TPS Streams', path: '/tps' },
   { label: 'Compare', path: '/compare' },
   { label: 'Timeline', path: '/timeline' },
   { label: 'Landscape', path: '/landscape' },

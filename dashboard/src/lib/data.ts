@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ThroughputFile } from './throughput'
 
 export interface Score {
   score: number
@@ -215,6 +216,7 @@ export const loadPrices = () => fetchJson<ModelPrices[]>('/data/prices.json')
 export const loadAliases = () => fetchJson<Alias[]>('/data/aliases.json')
 export const loadRunOptions = () => fetchJson<RunOptions[]>('/data/run_options.json')
 export const loadEnrichment = () => fetchJson<Enrichment>('/data/enrichment.json')
+export const loadThroughput = () => fetchJson<ThroughputFile>('/data/throughput.json')
 export const loadBenchmarkTimeseries = () =>
   fetchJson<Record<string, BenchmarkTimeseriesFile>>('/data/benchmark_timeseries.json')
 

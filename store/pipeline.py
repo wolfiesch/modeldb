@@ -27,6 +27,7 @@ from store.external_benchmarks import promote_external_benchmarks
 from store.open_llm_lb import promote_open_llm_lb
 from store.mteb import promote_mteb
 from store.artificial_analysis import promote_artificial_analysis
+from store.omp_speedtest import promote_omp_speedtest
 from store.vllm import promote_vllm
 from store.deepswe import promote_deepswe
 from store.arena import promote_arena
@@ -90,6 +91,7 @@ def run_pipeline(
         summary["mteb"] = promote_mteb(conn)
         summary["deepswe"] = promote_deepswe(conn)
         summary["artificial_analysis"] = promote_artificial_analysis(conn)
+        summary["omp_speedtest"] = promote_omp_speedtest(conn)
         summary["vllm"] = promote_vllm(conn)
         conn.commit()
     return summary

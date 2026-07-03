@@ -19,6 +19,7 @@ mkdirSync(OUT_DIR, { recursive: true })
 
 const db = new Database(DB_PATH) // NOT {readonly:true} — see header
 const q = (sql, params = []) => db.query(sql).all(...params)
+const OMP_TPS_BENCHMARK_ID = 'omp_visible_output_tokens_per_second'
 
 // --- ported from viz/lib/theme.mjs -----------------------------------------
 function shortName(slug) {
@@ -372,6 +373,54 @@ for (const r of q(
 }
 
 writeJson('enrichment.json', Object.fromEntries(enrichmentByModel))
+
+// --- 3b. throughput.json -------------------------------------------------------
+const seenThroughputSelectors = new Set()
+const throughputRows = q(
+  `SELECT br.model_id AS modelId, m.canonical_slug AS canonicalSlug,
+          m.developer_id AS dev, o.display_name AS devName,
+          br.score AS tps, br.measured_at AS measuredAt,
+          br.eval_condition_json AS evalCondition,
+          br.source_snapshot_id AS sourceSnapshotId,
+          ss.fetched_at AS fetchedAt
+   FROM benchmark_result br
+   JOIN model m ON m.id = br.model_id
+   LEFT JOIN organization o ON o.id = m.developer_id
+   LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+   WHERE br.benchmark_id = ? AND br.score IS NOT NULL
+   ORDER BY br.measured_at DESC, br.source_snapshot_id DESC, br.score DESC`,
+  [OMP_TPS_BENCHMARK_ID]
+).flatMap((r) => {
+  const condition = parseJsonObject(r.evalCondition)
+  const ompSelector = firstValue(condition, ['ompSelector'])
+  if (!ompSelector || seenThroughputSelectors.has(ompSelector)) return []
+  seenThroughputSelectors.add(ompSelector)
+  return [{
+    modelId: r.modelId,
+    canonicalSlug: r.canonicalSlug,
+    modelName: shortName(r.canonicalSlug),
+    dev: r.dev,
+    devName: r.devName,
+    providerLabel: firstValue(condition, ['providerLabel']) ?? String(ompSelector).split('/')[0],
+    ompSelector,
+    tps: r.tps,
+    visibleCharsPerSecond: numberOrNull(condition.visibleCharsPerSecond),
+    durationMs: numberOrNull(condition.durationMs),
+    measuredAt: r.measuredAt,
+    fetchedAt: r.fetchedAt,
+    sourceSnapshotId: r.sourceSnapshotId,
+    artifactPath: firstValue(condition, ['artifactPath']),
+    sourceHash: firstValue(condition, ['sourceHash']),
+    runId: firstValue(condition, ['runId']),
+    tokenizer: firstValue(condition, ['tokenizer'])
+  }]
+})
+
+writeJson('throughput.json', {
+  generatedAt: new Date().toISOString(),
+  benchmarkId: OMP_TPS_BENCHMARK_ID,
+  rows: throughputRows
+})
 
 // --- 4. benchmarks.json -------------------------------------------------------
 const benchmarks = q(

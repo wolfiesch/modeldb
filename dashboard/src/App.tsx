@@ -5,6 +5,7 @@ import ModelExplorer from './pages/ModelExplorer'
 import ModelDetail from './pages/ModelDetail'
 import EloOverTime from './pages/EloOverTime'
 import Benchmarks from './pages/Benchmarks'
+import TpsStreams from './pages/TpsStreams'
 import Landscape from './pages/Landscape'
 import Race from './pages/Race'
 import Compare from './pages/Compare'
@@ -22,6 +23,7 @@ const NAV = [
   { to: '/consensus', label: 'Consensus matrix' },
   { to: '/efficiency', label: 'Speed vs Quality' },
   { to: '/benchmarks', label: 'Benchmarks' },
+  { to: '/tps', label: 'TPS Streams' },
   { to: '/compare', label: 'Compare' },
   { to: '/timeline', label: 'Timeline' },
   { to: '/landscape', label: 'Landscape' },
@@ -83,6 +85,7 @@ export default function App() {
             <Route path="/models/:slug" element={<ModelDetail />} />
             <Route path="/elo" element={<EloOverTime />} />
             <Route path="/benchmarks" element={<Benchmarks />} />
+            <Route path="/tps" element={<TpsStreams />} />
             <Route path="/landscape" element={<Landscape />} />
             <Route path="/race" element={<Race />} />
             <Route path="/compare" element={<Compare />} />
