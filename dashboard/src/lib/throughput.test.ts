@@ -150,9 +150,18 @@ describe('throughput shaping', () => {
     expect(defaultRows.map((row) => row.source)).toEqual(['local_omp', 'artificialanalysis'])
   })
 
-  test('coinPlanForThroughput clamps coin counts and grows speed monotonically', () => {
-    expect(coinPlanForThroughput(1).count).toBe(24)
-    expect(coinPlanForThroughput(1000).count).toBe(360)
-    expect(coinPlanForThroughput(400).fallSpeed).toBeGreaterThan(coinPlanForThroughput(100).fallSpeed)
+  test('coinPlanForThroughput keeps visible flux linear in TPS', () => {
+    const oneHundred = coinPlanForThroughput(100)
+    const fourHundred = coinPlanForThroughput(400)
+    const twoSeventy = coinPlanForThroughput(270)
+    const nineSixtyEight = coinPlanForThroughput(968)
+
+    expect(coinPlanForThroughput(1).count).toBe(6)
+    expect(coinPlanForThroughput(1000).count).toBe(600)
+    expect(fourHundred.count).toBeCloseTo(oneHundred.count * 4, 0)
+    expect(nineSixtyEight.count).toBeGreaterThanOrEqual(twoSeventy.count * 3)
+    expect(fourHundred.fallSpeed).toBe(oneHundred.fallSpeed)
+    expect(fourHundred.coinsPerSecond).toBeGreaterThan(oneHundred.coinsPerSecond)
+    expect(coinPlanForThroughput(Number.NaN).coinsPerSecond).toBe(0)
   })
 })

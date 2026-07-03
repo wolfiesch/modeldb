@@ -51,6 +51,7 @@ export interface ThroughputRow {
 export interface CoinPlan {
   count: number
   fallSpeed: number
+  coinsPerSecond: number
 }
 
 export function buildThroughputRows(
@@ -122,9 +123,12 @@ export function buildThroughputRows(
 
 export function coinPlanForThroughput(tps: number): CoinPlan {
   const safeTps = Math.max(0, Number.isFinite(tps) ? tps : 0)
+  const fallSpeed = 1.15
+  const count = Math.max(6, Math.min(600, Math.round(safeTps * 0.6)))
   return {
-    count: Math.max(24, Math.min(360, Math.round(safeTps * 1.2))),
-    fallSpeed: 0.7 + Math.sqrt(safeTps) / 12,
+    count,
+    fallSpeed,
+    coinsPerSecond: safeTps * 0.6 * (fallSpeed / 9.5),
   }
 }
 

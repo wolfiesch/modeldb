@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import ThroughputCoinCanvas from '../components/ThroughputCoinCanvas'
 import { loadEnrichment, loadModels, loadThroughput, useData } from '../lib/data'
 import { buildThroughputRows, type ThroughputRow } from '../lib/throughput'
@@ -18,14 +19,39 @@ const sourceLabel: Record<ThroughputRow['source'], string> = {
 }
 
 export default function TpsStreams() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const sourceParam = searchParams.get('source')
+  const lanesParam = searchParams.get('lanes')
+  const lanesParamConsumedRef = useRef(searchParams.has('lanes'))
+  const userToggledLanesRef = useRef(false)
   const { data: models, loading: modelsLoading, error: modelsError } = useData(loadModels)
   const { data: enrichment, loading: enrichmentLoading, error: enrichmentError } = useData(loadEnrichment)
   const { data: throughput, error: throughputError } = useData(loadThroughput)
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() =>
+    sourceParam === 'local_omp' || sourceParam === 'artificialanalysis' ? sourceParam : 'all',
+  )
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(() =>
+    lanesParam ? lanesParam.split(',').filter(Boolean) : [],
+  )
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
 
   const throughputMissing = throughputError?.includes('/data/throughput.json: HTTP 404') ?? false
   const throughputWarning = throughputError && !throughputMissing ? throughputError : null
+  const filterCounts = useMemo<Record<SourceFilter, number>>(() => {
+    if (!models || !enrichment) return { all: 0, local_omp: 0, artificialanalysis: 0 }
+
+    const counts: Record<SourceFilter, number> = { all: 0, local_omp: 0, artificialanalysis: 0 }
+
+    for (const filter of FILTERS) {
+      counts[filter.value] = buildThroughputRows(models, enrichment, throughputMissing ? null : (throughput ?? null), {
+        maxRows: 40,
+        source: filter.value,
+      }).length
+    }
+
+    return counts
+  }, [enrichment, models, throughput, throughputMissing])
+
   const rows = useMemo(() => {
     if (!models || !enrichment) return []
     return buildThroughputRows(models, enrichment, throughputMissing ? null : (throughput ?? null), {
@@ -35,12 +61,33 @@ export default function TpsStreams() {
   }, [enrichment, models, sourceFilter, throughput, throughputMissing])
 
   useEffect(() => {
-    if (rows.length === 0) {
-      setSelectedKeys([])
-      return
-    }
+    if (lanesParamConsumedRef.current || userToggledLanesRef.current) return
+
     setSelectedKeys(rows.slice(0, 6).map((row) => row.key))
-  }, [rows, sourceFilter])
+  }, [rows])
+
+  useEffect(() => {
+    const defaultKeys = rows.slice(0, 6).map((row) => row.key)
+    const selectedKeysMatchDefault =
+      selectedKeys.length === defaultKeys.length && selectedKeys.every((key, index) => key === defaultKeys[index])
+    const nextParams = new URLSearchParams(searchParams)
+
+    if (sourceFilter === 'all') {
+      nextParams.delete('source')
+    } else {
+      nextParams.set('source', sourceFilter)
+    }
+
+    if (selectedKeys.length > 0 && !selectedKeysMatchDefault) {
+      nextParams.set('lanes', selectedKeys.join(','))
+    } else {
+      nextParams.delete('lanes')
+    }
+
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true })
+    }
+  }, [rows, searchParams, selectedKeys, setSearchParams, sourceFilter])
 
   const selectedRows = rows.filter((row) => selectedKeys.includes(row.key))
   const loading = modelsLoading || enrichmentLoading
@@ -76,7 +123,7 @@ export default function TpsStreams() {
                 type="button"
                 onClick={() => setSourceFilter(filter.value)}
               >
-                {filter.label}
+                {filter.label} · {filterCounts[filter.value]}
               </button>
             ))}
           </div>
@@ -95,7 +142,7 @@ export default function TpsStreams() {
         </div>
       ) : (
         <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <div className="rounded-[2rem] border border-neutral-800 bg-neutral-900/70 p-3 max-h-[660px] overflow-y-auto pr-1">
+          <div className="max-h-[320px] overflow-y-auto rounded-[2rem] border border-neutral-800 bg-neutral-900/70 p-3 pr-1 xl:max-h-[660px]">
             <div className="px-3 pb-3 pt-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-neutral-500">
               Select lanes
             </div>
@@ -109,9 +156,14 @@ export default function TpsStreams() {
                       selected
                         ? 'border-amber-300/70 bg-amber-300/10 shadow-lg shadow-amber-950/30'
                         : 'border-neutral-800 bg-black/20 hover:border-neutral-600'
-                    }`}
+                    } ${hoverKey === row.key ? 'ring-1 ring-amber-300/60' : ''}`}
                     type="button"
-                    onClick={() => toggleKey(row.key, setSelectedKeys)}
+                    onClick={() => {
+                      userToggledLanesRef.current = true
+                      toggleKey(row.key, setSelectedKeys)
+                    }}
+                    onMouseEnter={() => setHoverKey(row.key)}
+                    onMouseLeave={() => setHoverKey(null)}
                   >
                     <div className="flex items-start gap-3">
                       <div
@@ -122,7 +174,9 @@ export default function TpsStreams() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="truncate text-sm font-semibold text-neutral-100">{row.modelName}</div>
+                          <div className="truncate text-sm font-semibold text-neutral-100" title={row.modelName}>
+                            {row.modelName}
+                          </div>
                           <div className="shrink-0 text-sm font-semibold tabular-nums text-amber-200">
                             {row.tps.toFixed(1)} TPS
                           </div>
@@ -142,10 +196,14 @@ export default function TpsStreams() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <ThroughputCoinCanvas rows={selectedRows} />
-            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/70 px-4 py-3 text-xs text-neutral-500">
-              Coin count = clamp(round(TPS × 1.2), 24, 360). Falling speed uses sqrt(TPS).
+          <div className="order-first space-y-3 xl:order-none">
+            <ThroughputCoinCanvas rows={selectedRows} highlightKey={hoverKey} onLaneHover={setHoverKey} />
+            <div
+              className="rounded-2xl border border-neutral-800 bg-neutral-900/70 px-4 py-3 text-xs text-neutral-500"
+              title="Coin count = clamp(round(TPS × 1.2), 24, 360). Falling speed uses sqrt(TPS)."
+            >
+              Each lane rains coins at a rate proportional to the model's output speed — denser rain means more tokens per
+              second. Gray lane = 100 TPS reference.
             </div>
           </div>
         </section>
