@@ -230,6 +230,34 @@ def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model
 
     return {"accepted": 1, "queue_id": queue_id, "candidate_model_id": candidate_model_id}
 
+def accept_queue_batch(conn: sqlite3.Connection, approvals: list[dict[str, Any]]) -> dict[str, Any]:
+    """Atomically accept an explicit reviewed list of queue/model pairs."""
+
+    conn.execute("SAVEPOINT accept_queue_batch")
+    try:
+        items = [
+            accept_queue_row(
+                conn,
+                queue_id=_required_int(approval, "queue_id"),
+                candidate_model_id=_required_int(approval, "candidate_model_id"),
+            )
+            for approval in approvals
+        ]
+    except Exception:
+        conn.execute("ROLLBACK TO accept_queue_batch")
+        conn.execute("RELEASE accept_queue_batch")
+        raise
+    conn.execute("RELEASE accept_queue_batch")
+    return {"accepted": len(items), "items": items}
+
+
+def _required_int(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"approval.{key} must be an integer")
+    return value
+
+
 
 _QUEUE_FAMILY_SUFFIXES = (
     "non-reasoning",
@@ -839,6 +867,19 @@ def main(argv: list[str] | None = None) -> int:
             conn.commit()
         print(json.dumps(summary, sort_keys=True))
         return 0
+    if argv and argv[0] == "accept-batch":
+        if len(argv) != 2:
+            print("Usage: python -m resolve.resolver accept-batch FILE.json")
+            return 2
+        with open(argv[1], encoding="utf-8") as file:
+            approvals = json.load(file)
+        if not isinstance(approvals, list):
+            raise ValueError("accept-batch input must be a JSON array")
+        with connect() as conn:
+            summary = accept_queue_batch(conn, approvals)
+            conn.commit()
+        print(json.dumps(summary, sort_keys=True))
+        return 0
     if argv and argv[0] == "options":
         if len(argv) != 2:
             print("Usage: python -m resolve.resolver options QUEUE_ID")
@@ -859,6 +900,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(argv) != 1:
         print("Usage: python -m resolve.resolver SOURCE_MODEL_RECORD_ID")
         print("       python -m resolve.resolver accept QUEUE_ID MODEL_ID")
+        print("       python -m resolve.resolver accept-batch FILE.json")
         print("       python -m resolve.resolver drain-accepted [--dry-run]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-report [source_id]")
