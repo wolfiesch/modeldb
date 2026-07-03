@@ -5,6 +5,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User=wolfie
+Group=wolfie
+Environment=HOME=/home/wolfie
 Environment=MODELDB_REPO=/srv/modeldb
 Environment=STATIC_DIR=/srv/static/models
 Environment=OMP_TPS_ALLOW_PAID=1
