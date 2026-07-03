@@ -54,6 +54,11 @@ export function useECharts(
   useEffect(() => {
     if (option && chartRef.current) {
       chartRef.current.setOption(option, { notMerge: true })
+      // The container may have mounted at 0×0 (e.g. just after a loading
+      // branch flips). Force a resize on the next frame so marks paint into
+      // the real box instead of an empty canvas.
+      const raf = requestAnimationFrame(() => chartRef.current?.resize())
+      return () => cancelAnimationFrame(raf)
     }
   }, [option, el])
 

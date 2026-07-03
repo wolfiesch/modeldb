@@ -1,9 +1,11 @@
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router'
-import { loadBenchmarks, loadElo, loadModels, loadPrices, useData } from '../lib/data'
+import { loadBenchmarks, loadElo, loadMeta, loadModels, loadPrices, useData } from '../lib/data'
 import { labLabel } from '../lib/labs'
-import { colorForDark } from '../lib/theme'
+import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
+import ChartState, { resolveChartStatus } from '../components/ChartState'
+import { useModelDrawer } from '../components/ModelDrawer'
+import { fmtDate, fmtElo, fmtScore, fmtTokens } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 
 interface Point {
@@ -13,8 +15,6 @@ interface Point {
 }
 
 const loadTextOverallElo = () => loadElo('text_overall')
-const monthFormatter = new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric', timeZone: 'UTC' })
-
 interface FrontierPricePoint {
   value: [number, number]
   name: string
@@ -62,70 +62,118 @@ const darkAxis = {
 
 export default function Landscape() {
   const { data: models, loading, error } = useData(loadModels)
-  const { data: benchmarks } = useData(loadBenchmarks)
-  const { data: prices } = useData(loadPrices)
-  const { data: textOverallElo } = useData(loadTextOverallElo)
-  const navigate = useNavigate()
+  const { data: benchmarks, loading: benchmarksLoading, error: benchmarksError } = useData(loadBenchmarks)
+  const { data: prices, loading: pricesLoading, error: pricesError } = useData(loadPrices)
+  const { data: textOverallElo, loading: eloLoading, error: eloError } = useData(loadTextOverallElo)
+  const { data: meta } = useData(loadMeta)
+  const { openModel } = useModelDrawer()
 
-  const goTo = (params: unknown) => {
+  const openPoint = (params: unknown) => {
     const p = params as { data?: { meta?: Point } }
-    if (p.data?.meta?.slug) navigate(`/models/${encodeURIComponent(p.data.meta.slug)}`)
+    if (p.data?.meta?.slug) openModel(p.data.meta.slug)
   }
+
+  const ctxPoints = useMemo(
+    () => models?.filter((m) => m.released && m.ctx != null && m.ctx > 0) ?? [],
+    [models],
+  )
+
+  const ctxOutlierLabels = useMemo(() => {
+    const labels = new Set<string>()
+    const ordered = [...ctxPoints].sort((a, b) => (b.ctx ?? 0) - (a.ctx ?? 0))
+    for (const model of ordered.slice(0, 3)) labels.add(model.slug)
+    for (const model of ordered.slice(-3)) labels.add(model.slug)
+    return labels
+  }, [ctxPoints])
+
+  const freshPoints = useMemo(
+    () => models?.filter((m) => m.released && m.cutoff && /^\d{4}-\d{2}/.test(m.cutoff)) ?? [],
+    [models],
+  )
+
+  const gapRows = useMemo(() => {
+    if (!models || !benchmarks) return []
+    const benchIds = benchmarks.map((b) => b.id)
+    const best = new Map<string, { open: number | null; closed: number | null }>()
+    for (const m of models) {
+      for (const [bid, s] of Object.entries(m.scores)) {
+        if (s.selfReported === 1) continue
+        const entry = best.get(bid) ?? { open: null, closed: null }
+        if (m.open === 1) entry.open = Math.max(entry.open ?? -Infinity, s.score)
+        else entry.closed = Math.max(entry.closed ?? -Infinity, s.score)
+        best.set(bid, entry)
+      }
+    }
+    return benchIds
+      .filter((id) => best.has(id) && !id.startsWith('lmarena_'))
+      .map((id) => ({
+        name: benchmarks.find((b) => b.id === id)?.name ?? id,
+        ...best.get(id)!,
+      }))
+  }, [models, benchmarks])
 
   // 1. Context-window arms race
   const ctxOption = useMemo<EChartsCoreOption | null>(() => {
-    if (!models) return null
-    const pts = models.filter((m) => m.released && m.ctx != null && m.ctx > 0)
-    if (pts.length === 0) return null
+    if (ctxPoints.length === 0) return null
     return {
       backgroundColor: 'transparent',
       grid: { left: 72, right: 24, top: 24, bottom: 48 },
-      xAxis: { type: 'time', name: 'Release date', nameLocation: 'middle', nameGap: 32, ...darkAxis, splitLine: { show: false } },
-      yAxis: { type: 'log', name: 'Context window (tokens, log)', ...darkAxis },
+      xAxis: { type: 'time', name: 'Release date', nameLocation: 'middle', nameGap: 32, ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtDate(new Date(value).toISOString().slice(0, 10)) }, splitLine: { show: false } },
+      yAxis: { type: 'log', name: 'Context window (tokens, log)', ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtTokens(value) } },
       tooltip: {
         trigger: 'item',
         formatter: (p: { data: { meta: Point; value: [string, number] } }) =>
-          `<b>${p.data.meta.name}</b><br/>${labLabel(p.data.meta.dev)}<br/>${p.data.value[0]} · ${p.data.value[1].toLocaleString()} tokens`,
+          `<b>${p.data.meta.name}</b><br/>${labLabel(p.data.meta.dev)}<br/>${fmtDate(p.data.value[0])} · ${fmtTokens(p.data.value[1])} tokens`,
       },
       series: [
         {
           type: 'scatter',
           symbolSize: 9,
-          data: pts.map((m) => ({
+          data: ctxPoints.map((m) => ({
             value: [m.released, m.ctx],
             meta: { slug: m.slug, name: m.name, dev: m.dev },
             itemStyle: { color: colorForDark(m.dev), opacity: 0.8 },
+            label: ctxOutlierLabels.has(m.slug)
+              ? {
+                  show: true,
+                  formatter: shortName(m.slug),
+                  position: 'top',
+                  color: '#d4d4d4',
+                  fontSize: 10,
+                  backgroundColor: '#171717',
+                  borderColor: '#262626',
+                  borderWidth: 1,
+                  borderRadius: 4,
+                  padding: [2, 4],
+                }
+              : undefined,
           })),
         },
       ],
     }
-  }, [models])
+  }, [ctxPoints, ctxOutlierLabels])
 
   // 2. Knowledge freshness (cutoff vs release)
   const freshOption = useMemo<EChartsCoreOption | null>(() => {
-    if (!models) return null
-    const pts = models.filter(
-      (m) => m.released && m.cutoff && /^\d{4}-\d{2}/.test(m.cutoff),
-    )
-    if (pts.length === 0) return null
-    const dates = pts.flatMap((m) => [Date.parse(m.released!), Date.parse(m.cutoff! + (m.cutoff!.length === 7 ? '-01' : ''))])
+    if (freshPoints.length === 0) return null
+    const dates = freshPoints.flatMap((m) => [Date.parse(m.released!), Date.parse(m.cutoff! + (m.cutoff!.length === 7 ? '-01' : ''))])
     const min = Math.min(...dates)
     const max = Math.max(...dates)
     return {
       backgroundColor: 'transparent',
       grid: { left: 72, right: 24, top: 24, bottom: 48 },
-      xAxis: { type: 'time', name: 'Release date', nameLocation: 'middle', nameGap: 32, ...darkAxis, splitLine: { show: false } },
-      yAxis: { type: 'time', name: 'Knowledge cutoff', ...darkAxis },
+      xAxis: { type: 'time', name: 'Release date', nameLocation: 'middle', nameGap: 32, ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtDate(new Date(value).toISOString().slice(0, 10)) }, splitLine: { show: false } },
+      yAxis: { type: 'time', name: 'Knowledge cutoff', ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtDate(new Date(value).toISOString().slice(0, 10)) } },
       tooltip: {
         trigger: 'item',
         formatter: (p: { data: { meta: Point & { released: string; cutoff: string } } }) =>
-          `<b>${p.data.meta.name}</b><br/>${labLabel(p.data.meta.dev)}<br/>released ${p.data.meta.released} · cutoff ${p.data.meta.cutoff}`,
+          `<b>${p.data.meta.name}</b><br/>${labLabel(p.data.meta.dev)}<br/>released ${fmtDate(p.data.meta.released)} · cutoff ${fmtDate(p.data.meta.cutoff.length === 7 ? `${p.data.meta.cutoff}-01` : p.data.meta.cutoff)}`, 
       },
       series: [
         {
           type: 'scatter',
           symbolSize: 9,
-          data: pts.map((m) => ({
+          data: freshPoints.map((m) => ({
             value: [
               m.released,
               m.cutoff!.length === 7 ? `${m.cutoff}-01` : m.cutoff,
@@ -147,57 +195,42 @@ export default function Landscape() {
         },
       ],
     }
-  }, [models])
+  }, [freshPoints])
 
   // 3. Open vs closed best score per benchmark (independent results only)
   const gapOption = useMemo<EChartsCoreOption | null>(() => {
-    if (!models || !benchmarks) return null
-    const benchIds = benchmarks.map((b) => b.id)
-    const best = new Map<string, { open: number | null; closed: number | null }>()
-    for (const m of models) {
-      for (const [bid, s] of Object.entries(m.scores)) {
-        if (s.selfReported === 1) continue
-        const entry = best.get(bid) ?? { open: null, closed: null }
-        if (m.open === 1) entry.open = Math.max(entry.open ?? -Infinity, s.score)
-        else entry.closed = Math.max(entry.closed ?? -Infinity, s.score)
-        best.set(bid, entry)
-      }
-    }
-    const rows = benchIds
-      .filter((id) => best.has(id) && !id.startsWith('lmarena_'))
-      .map((id) => ({
-        name: benchmarks.find((b) => b.id === id)?.name ?? id,
-        ...best.get(id)!,
-      }))
-    if (rows.length === 0) return null
+    if (gapRows.length === 0) return null
     return {
       backgroundColor: 'transparent',
       grid: { left: 120, right: 24, top: 40, bottom: 32 },
       legend: { textStyle: { color: '#a3a3a3' }, top: 0 },
-      xAxis: { type: 'value', ...darkAxis },
-      yAxis: { type: 'category', data: rows.map((r) => r.name), axisLabel: { color: '#d4d4d4', fontSize: 11 } },
-      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'value', ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtScore(value) } },
+      yAxis: { type: 'category', data: gapRows.map((r) => r.name), axisLabel: { color: '#d4d4d4', fontSize: 11 } },
+      tooltip: {
+        trigger: 'axis',
+        valueFormatter: (value: number | null) => fmtScore(value),
+      },
       series: [
         {
           name: 'Closed',
           type: 'bar',
-          data: rows.map((r) => r.closed),
+          data: gapRows.map((r) => r.closed),
           itemStyle: { color: '#737373' },
           barMaxWidth: 12,
         },
         {
           name: 'Open weights',
           type: 'bar',
-          data: rows.map((r) => r.open),
+          data: gapRows.map((r) => r.open),
           itemStyle: { color: '#10b981' },
           barMaxWidth: 12,
         },
       ],
     }
-  }, [models, benchmarks])
+  }, [gapRows])
 
   // 4. Cost of frontier intelligence over time
-  const costTrend = useMemo<{ option: EChartsCoreOption; usesCurrentPrices: boolean } | null>(() => {
+  const costTrend = useMemo<{ option: EChartsCoreOption; usesCurrentPrices: boolean; rowCount: number } | null>(() => {
     if (!models || !prices || !textOverallElo) return null
 
     const modelById = new Map(models.map((model) => [model.id, model] as const))
@@ -290,18 +323,18 @@ export default function Landscape() {
               .filter((p) => p.data)
               .map((p, index) => {
                 const data = p.data!
-                const month = monthFormatter.format(data.value[0])
-                const price = `$${data.price.toLocaleString(undefined, { maximumFractionDigits: data.price < 1 ? 3 : 2 })}/1M output`
+                const month = fmtDate(new Date(data.value[0]).toISOString().slice(0, 10))
+                const price = `$${fmtScore(data.price)}/1M output`
                 const header = index === 0 ? `<b>${month}</b><br/>` : ''
                 return `${header}${p.seriesName}: ${data.name}<br/>${price}`
               })
               .join('<br/>'),
         },
-        xAxis: { type: 'time', name: 'Month', nameLocation: 'middle', nameGap: 32, ...darkAxis, splitLine: { show: false } },
-        yAxis: { type: 'log', name: 'USD per 1M output tokens', ...darkAxis },
+        xAxis: { type: 'time', name: 'Month', nameLocation: 'middle', nameGap: 32, ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtDate(new Date(value).toISOString().slice(0, 10)) }, splitLine: { show: false } },
+        yAxis: { type: 'log', name: 'USD per 1M output tokens', ...darkAxis, axisLabel: { color: '#a3a3a3', formatter: (value: number) => `$${fmtScore(value)}` } },
         series: [
           {
-            name: 'Frontier tier, ELO ≥ 1400',
+            name: `Frontier tier, ELO ≥ ${fmtElo(1400)}`,
             type: 'line',
             step: 'end',
             showSymbol: false,
@@ -310,7 +343,7 @@ export default function Landscape() {
             itemStyle: { color: '#10b981' },
           },
           {
-            name: 'Top tier, ELO ≥ 1450',
+            name: `Top tier, ELO ≥ ${fmtElo(1450)}`,
             type: 'line',
             step: 'end',
             showSymbol: false,
@@ -320,16 +353,20 @@ export default function Landscape() {
           },
         ],
       },
+      rowCount: frontier.length + top.length,
     }
   }, [models, prices, textOverallElo])
 
-  const ctxRef = useECharts(ctxOption, goTo)
-  const freshRef = useECharts(freshOption, goTo)
+  const ctxRef = useECharts(ctxOption, openPoint)
+  const freshRef = useECharts(freshOption, openPoint)
   const gapRef = useECharts(gapOption)
   const costRef = useECharts(costTrend?.option ?? null)
 
-  if (loading) return <div className="text-neutral-500">Loading…</div>
-  if (error) return <div className="text-red-400">{error}</div>
+  const modelsStatusBase = { loading, error, total: models?.length, updated: meta?.generatedAt ? fmtDate(meta.generatedAt) : undefined }
+  const ctxStatus = resolveChartStatus({ loading, error, hasData: ctxOption != null, rowCount: ctxPoints.length })
+  const freshStatus = resolveChartStatus({ loading, error, hasData: freshOption != null, rowCount: freshPoints.length })
+  const gapStatus = resolveChartStatus({ loading: loading || benchmarksLoading, error: error ?? benchmarksError, hasData: gapOption != null, rowCount: gapRows.length })
+  const costStatus = resolveChartStatus({ loading: loading || pricesLoading || eloLoading, error: error ?? pricesError ?? eloError, hasData: costTrend != null, rowCount: costTrend?.rowCount ?? 0 })
 
   return (
     <div className="space-y-6">
@@ -338,32 +375,44 @@ export default function Landscape() {
         <h2 className="mb-2 text-sm font-semibold text-neutral-200">
           Context-window arms race
         </h2>
-        {ctxOption ? (
+        <ChartState
+          status={ctxStatus}
+          minHeight={420}
+          emptyLabel="No models have context-window measurements."
+          errorLabel="Could not load model context-window data."
+          footer={{ source: 'models.dev', shown: ctxPoints.length, total: modelsStatusBase.total, updated: modelsStatusBase.updated }}
+        >
           <div ref={ctxRef} className="h-[420px] w-full" />
-        ) : (
-          <div className="py-16 text-center text-sm text-neutral-500">No data.</div>
-        )}
+        </ChartState>
       </div>
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
         <h2 className="mb-2 text-sm font-semibold text-neutral-200">Knowledge freshness</h2>
         <p className="mb-2 text-xs text-neutral-500">
           Dashed line = cutoff equals release date; distance below it is staleness at launch.
         </p>
-        {freshOption ? (
+        <ChartState
+          status={freshStatus}
+          minHeight={420}
+          emptyLabel="No models have both release and knowledge-cutoff dates."
+          errorLabel="Could not load knowledge-freshness data."
+          footer={{ source: 'models.dev', shown: freshPoints.length, total: modelsStatusBase.total, updated: modelsStatusBase.updated }}
+        >
           <div ref={freshRef} className="h-[420px] w-full" />
-        ) : (
-          <div className="py-16 text-center text-sm text-neutral-500">No data.</div>
-        )}
+        </ChartState>
       </div>
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
         <h2 className="mb-2 text-sm font-semibold text-neutral-200">
           Open vs closed: best independent score per benchmark
         </h2>
-        {gapOption ? (
+        <ChartState
+          status={gapStatus}
+          minHeight={420}
+          emptyLabel="No independent benchmark scores are available."
+          errorLabel="Could not load benchmark data."
+          footer={{ source: 'Artificial Analysis + benchmark providers', shown: gapRows.length, total: benchmarks?.length, updated: modelsStatusBase.updated }}
+        >
           <div ref={gapRef} className="h-[420px] w-full" />
-        ) : (
-          <div className="py-16 text-center text-sm text-neutral-500">No data.</div>
-        )}
+        </ChartState>
       </div>
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
         <h2 className="mb-2 text-sm font-semibold text-neutral-200">
@@ -373,11 +422,15 @@ export default function Landscape() {
           Cheapest model in each ELO tier by active models.dev output-token price
           {costTrend?.usesCurrentPrices ? '; prices are current list prices.' : '.'}
         </p>
-        {costTrend ? (
+        <ChartState
+          status={costStatus}
+          minHeight={420}
+          emptyLabel="No price history is available for the ELO frontier tiers."
+          errorLabel="Could not load frontier cost data."
+          footer={{ source: costTrend?.usesCurrentPrices ? 'models.dev current prices + LMArena' : 'models.dev price history + LMArena', shown: costTrend?.rowCount, total: prices?.length, updated: modelsStatusBase.updated }}
+        >
           <div ref={costRef} className="h-[420px] w-full" />
-        ) : (
-          <div className="py-16 text-center text-sm text-neutral-500">No data.</div>
-        )}
+        </ChartState>
       </div>
     </div>
   )

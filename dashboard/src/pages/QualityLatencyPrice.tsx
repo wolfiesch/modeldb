@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { loadEnrichment, loadModels, useData } from '../lib/data'
-import LabLogo from '../components/LabLogo'
+import DevFilter from '../components/DevFilter'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
+import ChartState, { resolveChartStatus } from '../components/ChartState'
+import { fmtElo, fmtPercent, fmtPrice, fmtSeconds, fmtTps } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 
 interface ScatterPoint {
@@ -154,6 +156,9 @@ export default function QualityLatencyPrice() {
           borderColor: showPareto && p.isFrontier ? '#f5f5f5' : 'transparent',
           borderWidth: showPareto && p.isFrontier ? 1.5 : 0,
         },
+        label: p.isFrontier
+          ? { show: true, position: 'top', formatter: p.name, color: '#e5e5e5', fontSize: 10 }
+          : undefined,
       }
     })
 
@@ -171,7 +176,7 @@ export default function QualityLatencyPrice() {
         nameLocation: 'middle',
         nameGap: 32,
         scale: true,
-        axisLabel: { color: '#a3a3a3' },
+        axisLabel: { color: '#a3a3a3', formatter: (value: number) => xMetric === 'speed' ? fmtTps(value).replace(' tok/s', '') : fmtSeconds(value) },
         nameTextStyle: { color: '#737373' },
         splitLine: { lineStyle: { color: '#262626' } },
       },
@@ -179,7 +184,7 @@ export default function QualityLatencyPrice() {
         type: 'value',
         name: Y_METRIC_LABELS[yMetric],
         scale: true,
-        axisLabel: { color: '#a3a3a3' },
+        axisLabel: { color: '#a3a3a3', formatter: (value: number) => yMetric === 'elo' ? fmtElo(value) : fmtPercent(value) },
         nameTextStyle: { color: '#737373' },
         splitLine: { lineStyle: { color: '#262626' } },
       },
@@ -189,10 +194,10 @@ export default function QualityLatencyPrice() {
           const d = params.data?.meta
           if (!d) return ''
           return `<b>${d.name}</b><br/>` +
-            `Quality: ${d.quality.toFixed(1)}${yMetric === 'elo' ? '' : '%'}<br/>` +
-            `Speed: ${d.speed?.toFixed(1) ?? 'N/A'} tok/s<br/>` +
-            `Latency: ${d.latency?.toFixed(2) ?? 'N/A'}s TTFT<br/>` +
-            `Price: ${d.price != null ? `$${d.price.toFixed(2)}/1M out` : 'Unknown'}`
+            `Quality: ${yMetric === 'elo' ? fmtElo(d.quality) : fmtPercent(d.quality)}<br/>` +
+            `Speed: ${fmtTps(d.speed)}<br/>` +
+            `Latency: ${fmtSeconds(d.latency)} TTFT<br/>` +
+            `Price: ${d.price != null ? `${fmtPrice(d.price)}/1M out` : 'Unknown'}`
         },
       },
       series: [
@@ -229,9 +234,12 @@ export default function QualityLatencyPrice() {
     return [...seen].sort()
   }, [models])
 
-  if (modelsLoading || enrichLoading) return <div className="text-neutral-500">Loading…</div>
-  if (modelsError || enrichError) return <div className="text-red-400">{modelsError ?? enrichError}</div>
-  if (!models || !enrichment) return null
+  const status = resolveChartStatus({
+    loading: modelsLoading || enrichLoading,
+    error: modelsError ?? enrichError,
+    hasData: !!models && !!enrichment,
+    rowCount: points.length,
+  })
 
   return (
     <div className="space-y-6">
@@ -302,7 +310,7 @@ export default function QualityLatencyPrice() {
 
         <div className="flex flex-col gap-1 min-w-40">
           <label className="text-[10px] uppercase tracking-wider text-neutral-500" htmlFor="max-price-filter">
-            Max Price: {maxPrice === 100 ? 'Any' : `$${maxPrice}/1M`}
+            Max Price: {maxPrice === 100 ? 'Any' : `${fmtPrice(maxPrice)}/1M`}
           </label>
           <input
             id="max-price-filter"
@@ -331,41 +339,24 @@ export default function QualityLatencyPrice() {
 
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-neutral-500">Developer</span>
-          <div className="flex flex-wrap gap-1">
-            <button
-              onClick={() => setDevFilter(null)}
-              className={`rounded border px-2 py-1 text-xs ${
-                devFilter === null
-                  ? 'border-neutral-300 bg-neutral-800 text-white'
-                  : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
-              }`}
-            >
-              All
-            </button>
-            {devs.map((d) => (
-              <button
-                key={d}
-                onClick={() => setDevFilter((cur) => (cur === d ? null : d))}
-                className={`rounded border px-2 py-1 text-xs`}
-                style={{
-                  borderColor: devFilter === d ? colorForDark(d) : 'rgba(64,64,64,0.5)',
-                  backgroundColor: devFilter === d ? 'rgba(64,64,64,0.3)' : undefined,
-                  color: devFilter === d ? '#fff' : '#a3a3a3',
-                }}
-              >
-                <LabLogo dev={d} size={12} showLabel labelClassName="max-w-20 truncate" />
-              </button>
-            ))}
-          </div>
+          <DevFilter devs={devs} value={devFilter} onChange={setDevFilter} />
         </div>
       </div>
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-        {points.length === 0 ? (
-          <div className="py-16 text-center text-neutral-500">No models match filters or have measurements.</div>
-        ) : (
+        <ChartState
+          status={status}
+          minHeight={480}
+          emptyLabel="No models match filters or have measurements."
+          footer={{
+            source: 'Artificial Analysis + LMArena',
+            shown: points.length,
+            total: models?.length ?? undefined,
+            note: showPareto ? 'Highlighted points are on the efficient (Pareto) frontier.' : undefined,
+          }}
+        >
           <div ref={chartRef} className="h-[480px] w-full" />
-        )}
+        </ChartState>
       </div>
     </div>
   )

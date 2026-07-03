@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadElo, loadModels, useData, loadBenchmarkTimeseries } from '../lib/data'
+import { loadElo, loadModels, useData, loadBenchmarkTimeseries, loadMeta } from '../lib/data'
 import LabLogo from '../components/LabLogo'
+import { useModelDrawer } from '../components/ModelDrawer'
 import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import { useSearchParams } from 'react-router'
+import ChartState, { resolveChartStatus } from '../components/ChartState'
+import { fmtDate, fmtElo, fmtScore } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 
 interface TimeseriesSeries {
@@ -36,6 +39,10 @@ function selectedModelsFromParam(params: URLSearchParams): Set<number> | null {
 
 const DEFAULT_BENCHMARK_ID = 'lmarena_text_overall'
 
+function formatBenchmarkValue(value: number, benchmarkId: string) {
+  return benchmarkId.startsWith('lmarena') ? fmtElo(value) : fmtScore(value)
+}
+
 const TIMELINE_BENCHMARKS = [
   { id: 'lmarena_text_overall', label: 'LMArena Text Overall', category: 'arena' },
   { id: 'lmarena_text_coding', label: 'LMArena Text Coding', category: 'arena' },
@@ -57,10 +64,12 @@ export default function EloOverTime() {
   const [params, setParams] = useSearchParams()
   const [benchId, setBenchId] = useState<string>(() => params.get('b') ?? DEFAULT_BENCHMARK_ID)
   
-  const { data: eloOverall, loading: overallLoading } = useData(useCallback(() => loadElo('text_overall'), []))
-  const { data: eloCoding, loading: codingLoading } = useData(useCallback(() => loadElo('text_coding'), []))
-  const { data: timeseries, loading: timeseriesLoading } = useData(loadBenchmarkTimeseries)
-  const { data: models, loading: modelsLoading } = useData(loadModels)
+  const { data: eloOverall, loading: overallLoading, error: overallError } = useData(useCallback(() => loadElo('text_overall'), []))
+  const { data: eloCoding, loading: codingLoading, error: codingError } = useData(useCallback(() => loadElo('text_coding'), []))
+  const { data: timeseries, loading: timeseriesLoading, error: timeseriesError } = useData(loadBenchmarkTimeseries)
+  const { data: models, loading: modelsLoading, error: modelsError } = useData(loadModels)
+  const { data: meta } = useData(loadMeta)
+  const { openModel } = useModelDrawer()
 
   const [selected, setSelected] = useState<Set<number> | null>(() => selectedModelsFromParam(params))
   const [search, setSearch] = useState('')
@@ -294,14 +303,14 @@ export default function EloOverTime() {
       grid: { left: 56, right: 32, top: 32, bottom: 88 },
       xAxis: {
         type: 'time',
-        axisLabel: { color: '#a3a3a3' },
+        axisLabel: { color: '#a3a3a3', formatter: (value: number) => fmtDate(new Date(value).toISOString().slice(0, 10)) },
         splitLine: { show: false },
       },
       yAxis: {
         type: 'value',
         scale: true,
         name: benchId.startsWith('lmarena') ? 'ELO' : 'Score',
-        axisLabel: { color: '#a3a3a3' },
+        axisLabel: { color: '#a3a3a3', formatter: (value: number) => formatBenchmarkValue(value, benchId) },
         nameTextStyle: { color: '#737373' },
         splitLine: { lineStyle: { color: '#262626' } },
       },
@@ -316,12 +325,12 @@ export default function EloOverTime() {
         formatter: (params: unknown) => {
           const list = params as Array<{ seriesName: string; value: [number, number]; marker: string }>
           if (!list || list.length === 0) return ''
-          const date = new Date(list[0].value[0]).toLocaleDateString()
+          const date = fmtDate(new Date(list[0].value[0]).toISOString().slice(0, 10))
           let out = `<b>${date}</b><br/>`
           list.forEach((p) => {
             if (p.seriesName.includes('Lower') || p.seriesName.includes('Envelope')) return
             const val = p.value[1]
-            out += `${p.marker} ${p.seriesName}: ${Math.round(val)}<br/>`
+            out += `${p.marker} ${p.seriesName}: ${formatBenchmarkValue(val, benchId)}<br/>`
           })
           return out
         },
@@ -331,6 +340,20 @@ export default function EloOverTime() {
   }, [activeDataset, activeIds, envelopeAndLines, nameOf, benchId])
 
   const chartRef = useECharts(option)
+
+  const chartRowCount = useMemo(() => {
+    if (!activeDataset || !envelopeAndLines) return 0
+    return activeDataset.series
+      .filter((s) => activeIds.has(s.modelId))
+      .reduce((sum, s) => sum + (s.elo ?? s.score ?? []).length, envelopeAndLines.maxPath.length)
+  }, [activeDataset, activeIds, envelopeAndLines])
+
+  const chartStatus = resolveChartStatus({
+    loading: overallLoading || codingLoading || timeseriesLoading || modelsLoading,
+    error: overallError ?? codingError ?? timeseriesError ?? modelsError,
+    hasData: option != null,
+    rowCount: chartRowCount,
+  })
 
   const searchResults = useMemo(() => {
     if (!activeDataset || !search.trim()) return []
@@ -348,11 +371,6 @@ export default function EloOverTime() {
       return next
     })
   }
-
-  const isDataLoading = overallLoading || codingLoading || timeseriesLoading || modelsLoading
-
-  if (isDataLoading) return <div className="text-neutral-500">Loading…</div>
-  if (!activeDataset) return null
 
   return (
     <div className="space-y-4">
@@ -384,7 +402,21 @@ export default function EloOverTime() {
       </div>
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-        <div ref={chartRef} className="h-[480px] w-full" />
+        <ChartState
+          status={chartStatus}
+          minHeight={480}
+          emptyLabel="No models match the current filters or have measurements."
+          errorLabel="Could not load the timeline data."
+          footer={{
+            source: benchId.startsWith('lmarena') ? 'LMArena' : 'Artificial Analysis + benchmark providers',
+            shown: chartRowCount,
+            total: activeDataset?.series.reduce((sum, s) => sum + (s.elo ?? s.score ?? []).length, 0),
+            updated: meta?.generatedAt ? fmtDate(meta.generatedAt) : undefined,
+            note: 'Frontier envelope is computed from latest available model scores at each timestamp.',
+          }}
+        >
+          <div ref={chartRef} className="h-[480px] w-full" />
+        </ChartState>
       </div>
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
@@ -433,25 +465,44 @@ export default function EloOverTime() {
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 px-1">Active / Top Models</div>
           <div className="flex flex-wrap gap-1.5">
             {ranked.map((r) => {
-              const m = activeDataset.models.find((item) => item.id === r.modelId)
+              const m = activeDataset?.models.find((item) => item.id === r.modelId)
               if (!m) return null
               const isSelected = activeIds.has(r.modelId)
               return (
-                <button
+                <div
                   key={r.modelId}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => toggle(r.modelId)}
-                  className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs border transition-all`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      toggle(r.modelId)
+                    }
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded border px-2.5 py-1 text-xs transition-all"
                   style={{
                     borderColor: isSelected ? colorForDark(m.dev) : 'rgba(64,64,64,0.3)',
                     backgroundColor: isSelected ? 'rgba(64,64,64,0.1)' : undefined,
                     color: isSelected ? '#fff' : '#8c8c8c',
                   }}
                 >
-                  <LabLogo dev={m.dev} size={12} showLabel labelClassName="max-w-24 truncate" />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openModel(m.slug)
+                    }}
+                    className="rounded p-0.5 text-left transition hover:bg-neutral-800 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    aria-label={`Open ${shortName(m.slug)} details`}
+                    title={`Open ${shortName(m.slug)} details`}
+                  >
+                    <LabLogo dev={m.dev} size={12} showLabel labelClassName="max-w-24 truncate" />
+                  </button>
                   <span className="opacity-50">/</span>
                   <span>{shortName(m.slug)}</span>
-                  <span className="ml-1 opacity-70 font-semibold">{Math.round(r.latest)}</span>
-                </button>
+                  <span className="ml-1 font-semibold opacity-70">{formatBenchmarkValue(r.latest, benchId)}</span>
+                </div>
               )
             })}
           </div>

@@ -13,10 +13,12 @@ import {
 } from '../lib/data'
 import { LabLogo } from '../components/LabLogo'
 import { labLabel } from '../lib/labs'
-import { colorForDark } from '../lib/theme'
+import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
+import { useModelDrawer } from '../components/ModelDrawer'
+import { fmtDate, fmtElo, fmtPrice, fmtScore, fmtTokens } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
-import type { RunOptionPrice, RunOptionVariant } from '../lib/data'
+import type { Model, RunOptionPrice, RunOptionVariant } from '../lib/data'
 
 const loadOverall = () => loadElo('text_overall')
 const loadCoding = () => loadElo('text_coding')
@@ -138,6 +140,8 @@ export default function ModelDetail() {
     [models, slug],
   )
 
+  const { openModel } = useModelDrawer()
+
   const eloOption = useMemo<EChartsCoreOption | null>(() => {
     if (!model) return null
     const series = []
@@ -221,10 +225,103 @@ export default function ModelDetail() {
     aliasesBySource.set(a.sourceId, list)
   }
 
-  const benchName = new Map((benchmarks ?? []).map((b) => [b.id, b.name]))
+  const benchById = new Map((benchmarks ?? []).map((b) => [b.id, b]))
   const scoreEntries = Object.entries(model.scores).sort(
     (a, b) => (b[1].score ?? 0) - (a[1].score ?? 0),
   )
+  const capabilityRows = scoreEntries
+    .filter(([id]) => !id.startsWith('lmarena_') && (benchById.get(id)?.higherIsBetter ?? 1) === 1)
+    .map(([id, s]) => {
+      const score = s.score ?? 0
+      const fraction = score <= 1 ? score : score <= 100 ? score / 100 : 0
+      return {
+        id,
+        name: benchById.get(id)?.name ?? id,
+        score,
+        width: `${Math.max(0, Math.min(100, fraction * 100))}%`,
+      }
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => Number.parseFloat(b.width) - Number.parseFloat(a.width))
+    .slice(0, 6)
+  const currentElo = model.scores.lmarena_text_overall?.score ?? null
+  const currentOutputPrice = model.priceOut
+  const alternativeCandidates: Array<{ label: string; model: Model }> = []
+  if (models) {
+    if (currentElo != null && currentOutputPrice != null) {
+      const cheaperSimilar = models
+        .filter(
+          (m) =>
+            m.id !== model.id &&
+            m.priceOut != null &&
+            m.priceOut < currentOutputPrice &&
+            m.scores.lmarena_text_overall?.score != null &&
+            Math.abs(m.scores.lmarena_text_overall.score - currentElo) <= 30,
+        )
+        .toSorted(
+          (a, b) =>
+            Math.abs((a.scores.lmarena_text_overall?.score ?? 0) - currentElo) -
+              Math.abs((b.scores.lmarena_text_overall?.score ?? 0) - currentElo) ||
+            (a.priceOut ?? Number.POSITIVE_INFINITY) - (b.priceOut ?? Number.POSITIVE_INFINITY),
+        )[0]
+      if (cheaperSimilar) alternativeCandidates.push({ label: 'Cheaper, similar quality', model: cheaperSimilar })
+    }
+
+    const openWeightAlternative = models
+      .filter(
+        (m) =>
+          m.id !== model.id &&
+          m.open === 1 &&
+          m.scores.lmarena_text_overall?.score != null &&
+          (model.open !== 1 || currentElo == null || m.scores.lmarena_text_overall.score > currentElo),
+      )
+      .toSorted(
+        (a, b) => (b.scores.lmarena_text_overall?.score ?? -Infinity) - (a.scores.lmarena_text_overall?.score ?? -Infinity),
+      )[0]
+    if (openWeightAlternative) alternativeCandidates.push({ label: 'Open-weight alternative', model: openWeightAlternative })
+
+    if (model.released && model.family != null) {
+      const releaseTime = new Date(model.released).getTime()
+      if (!Number.isNaN(releaseTime)) {
+        const sibling = models
+          .filter(
+            (m) =>
+              m.id !== model.id &&
+              m.dev === model.dev &&
+              m.family === model.family &&
+              m.released != null &&
+              m.released !== model.released &&
+              !Number.isNaN(new Date(m.released).getTime()),
+          )
+          .toSorted(
+            (a, b) =>
+              Math.abs(new Date(a.released!).getTime() - releaseTime) -
+              Math.abs(new Date(b.released!).getTime() - releaseTime),
+          )[0]
+        if (sibling) alternativeCandidates.push({ label: 'Same developer, newer/older', model: sibling })
+      }
+    }
+
+    if (currentElo != null) {
+      const higherQuality = models
+        .filter(
+          (m) =>
+            m.id !== model.id &&
+            m.scores.lmarena_text_overall?.score != null &&
+            m.scores.lmarena_text_overall.score > currentElo,
+        )
+        .toSorted(
+          (a, b) => (a.scores.lmarena_text_overall?.score ?? Infinity) - (b.scores.lmarena_text_overall?.score ?? Infinity),
+        )[0]
+      if (higherQuality) alternativeCandidates.push({ label: 'Higher quality', model: higherQuality })
+    }
+  }
+  const seenAlternativeSlugs = new Set<string>()
+  const alternatives = alternativeCandidates.filter(({ model: candidate }) => {
+    if (seenAlternativeSlugs.has(candidate.slug)) return false
+    seenAlternativeSlugs.add(candidate.slug)
+    return true
+  })
   const modelEnrichment = enrichment?.[String(model.id)] ?? null
   const artificialRows = artificialAnalysisLabels
     .map(([id, label]) => ({ id, label, signal: modelEnrichment?.artificialAnalysis[id] ?? null }))
@@ -255,18 +352,19 @@ export default function ModelDetail() {
     ['Tier / variant', model.tier ?? '—'],
     ['Parameters', model.params ?? '—'],
     ['Training role', model.role ?? '—'],
-    ['Released', model.released ?? '—'],
-    ['Knowledge cutoff', model.cutoff ?? '—'],
+    ['Released', fmtDate(model.released)],
+    ['Knowledge cutoff', fmtDate(model.cutoff)],
     ['Stability', model.stability ?? '—'],
     ['Open weights', model.open === 1 ? 'yes' : model.open === 0 ? 'no' : '—'],
-    ['Context window', model.ctx == null ? '—' : model.ctx.toLocaleString()],
-    ['Max output', model.maxOut == null ? '—' : model.maxOut.toLocaleString()],
+    ['LMArena ELO', fmtElo(currentElo)],
+    ['Context window', fmtTokens(model.ctx)],
+    ['Max output', fmtTokens(model.maxOut)],
     ['Input modalities', model.inMod?.join(', ') ?? '—'],
     ['Output modalities', model.outMod?.join(', ') ?? '—'],
-    ['$ in / 1M', model.priceIn == null ? '—' : `$${model.priceIn}`],
-    ['$ out / 1M', model.priceOut == null ? '—' : `$${model.priceOut}`],
-    ['$ cache read / 1M', model.priceCacheRead == null ? '—' : `$${model.priceCacheRead}`],
-    ['$ cache write / 1M', model.priceCacheWrite == null ? '—' : `$${model.priceCacheWrite}`],
+    ['$ in / 1M', fmtPrice(model.priceIn)],
+    ['$ out / 1M', fmtPrice(model.priceOut)],
+    ['$ cache read / 1M', fmtPrice(model.priceCacheRead)],
+    ['$ cache write / 1M', fmtPrice(model.priceCacheWrite)],
   ]
 
   return (
@@ -318,6 +416,33 @@ export default function ModelDetail() {
         </div>
 
         <div className="space-y-6">
+          {capabilityRows.length > 0 ? (
+            <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-neutral-200">Capability profile</h2>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Strongest recorded benchmark signals for this model.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {capabilityRows.map((row) => (
+                  <div key={row.id}>
+                    <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate text-neutral-300">{row.name}</span>
+                      <span className="font-medium text-neutral-100">{fmtScore(row.score)}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-neutral-800">
+                      <div
+                        className="h-2 rounded-full bg-cyan-400/80"
+                        style={{ width: row.width }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
             <h2 className="mb-3 text-sm font-semibold text-neutral-200">Arena ELO history</h2>
             {eloOption ? (
@@ -338,11 +463,9 @@ export default function ModelDetail() {
                 <tbody>
                   {scoreEntries.map(([id, s]) => (
                     <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
-                      <td className="py-1.5 text-neutral-300">{benchName.get(id) ?? id}</td>
+                      <td className="py-1.5 text-neutral-300">{benchById.get(id)?.name ?? id}</td>
                       <td className="py-1.5 text-right text-neutral-100">
-                        {id.startsWith('lmarena_')
-                          ? Math.round(s.score)
-                          : Number(s.score.toFixed(s.score < 1 ? 3 : 1))}
+                        {id.startsWith('lmarena_') ? fmtElo(s.score) : fmtScore(s.score)}
                       </td>
                       <td className="w-24 py-1.5 pl-3 text-right">
                         {s.selfReported === 1 && (
@@ -378,7 +501,7 @@ export default function ModelDetail() {
                             <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
                               <td className="py-1.5 text-neutral-300">{label}</td>
                               <td className="py-1.5 text-right text-neutral-100">
-                                {Number(signal.score.toFixed(signal.score < 1 ? 3 : 1))}
+                                {fmtScore(signal.score)}
                               </td>
                             </tr>
                           ) : null,
@@ -464,6 +587,58 @@ export default function ModelDetail() {
           </div>
         </div>
       </div>
+
+      {alternatives.length > 0 ? (
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+          <div className="mb-4">
+            <h2 className="text-sm font-semibold text-neutral-200">Alternatives</h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              Nearby choices from the current model catalog.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {alternatives.map(({ label, model: alternative }) => (
+              <button
+                key={`${label}:${alternative.slug}`}
+                type="button"
+                onClick={() => openModel(alternative.slug)}
+                className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3 text-left transition hover:border-cyan-500/50 hover:bg-neutral-900"
+              >
+                <div className="mb-3 text-[10px] font-medium uppercase tracking-wide text-cyan-300">
+                  {label}
+                </div>
+                <div className="flex items-center gap-2">
+                  <LabLogo
+                    dev={alternative.dev}
+                    devName={alternative.devName}
+                    size={22}
+                    decorative
+                    imgClassName="rounded"
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-neutral-100">
+                      {shortName(alternative.slug)}
+                    </div>
+                    <div className="truncate text-xs text-neutral-500">
+                      {labLabel(alternative.dev, alternative.devName)}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-neutral-500">ELO</span>
+                  <span className="font-medium text-neutral-200">
+                    {fmtElo(alternative.scores.lmarena_text_overall?.score)}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-neutral-500">Output</span>
+                  <span className="font-medium text-neutral-200">{fmtPrice(alternative.priceOut)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
         <div className="mb-4">

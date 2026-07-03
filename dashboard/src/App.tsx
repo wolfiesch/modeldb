@@ -14,6 +14,7 @@ import DevPage from './pages/DevPage'
 import Consensus from './pages/Consensus'
 import QualityLatencyPrice from './pages/QualityLatencyPrice'
 import CommandPalette from './components/CommandPalette'
+import { ModelDrawerProvider } from './components/ModelDrawer'
 
 const NAV = [
   { to: '/', label: 'Overview' },
@@ -32,6 +33,7 @@ const NAV = [
 export default function App() {
   const { data: meta } = useData(loadMeta)
   return (
+    <ModelDrawerProvider>
     <div className="flex h-full">
       <aside className="flex w-52 shrink-0 flex-col border-r border-neutral-800 bg-neutral-950 p-4">
         <div className="mb-6">
@@ -102,5 +104,6 @@ export default function App() {
       </div>
       <CommandPalette />
     </div>
+    </ModelDrawerProvider>
   )
 }

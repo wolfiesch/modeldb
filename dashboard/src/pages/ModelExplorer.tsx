@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import LabLogo from '../components/LabLogo'
+import { useModelDrawer } from '../components/ModelDrawer'
 import { loadAliases, loadElo, loadModels, useData, type Model } from '../lib/data'
+import { deltaColorClass, fmtDelta, fmtElo, fmtPrice, fmtScore, fmtTokens } from '../lib/format'
 
 type SortKey =
   | 'name'
@@ -16,17 +18,17 @@ type SortKey =
   | 'open'
   | 'delta30d'
 
-const COLUMNS: Array<{ key: SortKey; label: string; numeric?: boolean }> = [
+const COLUMNS: Array<{ key: SortKey; label: string; numeric?: boolean; help?: string }> = [
   { key: 'name', label: 'Model' },
   { key: 'dev', label: 'Developer' },
   { key: 'released', label: 'Released' },
-  { key: 'ctx', label: 'Context', numeric: true },
-  { key: 'maxOut', label: 'Max out', numeric: true },
-  { key: 'priceIn', label: '$ in/1M', numeric: true },
-  { key: 'priceOut', label: '$ out/1M', numeric: true },
+  { key: 'ctx', label: 'Context', numeric: true, help: 'Context window (tokens)' },
+  { key: 'maxOut', label: 'Max out', numeric: true, help: 'Max output tokens' },
+  { key: 'priceIn', label: '$ in/1M', numeric: true, help: 'Input price per 1M tokens (USD)' },
+  { key: 'priceOut', label: '$ out/1M', numeric: true, help: 'Output price per 1M tokens (USD)' },
   { key: 'elo', label: 'ELO', numeric: true },
-  { key: 'delta30d', label: 'Δ30d', numeric: true },
-  { key: 'swe', label: 'SWE-bench', numeric: true },
+  { key: 'delta30d', label: 'Δ30d', numeric: true, help: 'Arena ELO change over the last 30 days' },
+  { key: 'swe', label: 'SWE-bench', numeric: true, help: 'SWE-bench Verified score' },
   { key: 'open', label: 'Open' },
 ]
 
@@ -57,31 +59,16 @@ function sortValue(m: Model, key: SortKey, eloDeltaByModelId: Map<number, number
   }
 }
 
-const fmt = (v: number | null | undefined, digits = 2) =>
-  v == null ? '—' : v >= 1000 ? v.toLocaleString() : v.toFixed(digits).replace(/\.00$/, '')
-
 const loadTextOverallElo = () => loadElo('text_overall')
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
-
-function formatDelta(delta: number | undefined): string {
-  if (delta == null) return '—'
-  const rounded = Math.round(delta)
-  return delta > 2 ? `+${rounded}` : String(rounded)
-}
-
-function deltaClass(delta: number | undefined): string {
-  if (delta == null) return 'text-neutral-500'
-  if (delta > 2) return 'text-emerald-400'
-  if (delta < -2) return 'text-red-400'
-  return 'text-neutral-300'
-}
 
 export default function ModelExplorer() {
   const { data: models, loading, error } = useData(loadModels)
   const { data: aliases } = useData(loadAliases)
   const { data: textOverallElo } = useData(loadTextOverallElo)
   const navigate = useNavigate()
+  const { openModel } = useModelDrawer()
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
   const [sortKey, setSortKey] = useState<SortKey>(() => {
@@ -190,8 +177,9 @@ export default function ModelExplorer() {
                         setSortDesc(c.numeric ?? false)
                       }
                     }}
+                    title={c.help}
                     className={`cursor-pointer px-3 py-2 font-medium hover:text-neutral-200 ${
-                      c.numeric ? 'text-right' : ''
+                      c.key === 'name' ? 'sticky left-0 z-20 bg-neutral-900' : c.numeric ? 'text-right' : ''
                     }`}
                   >
                     {c.label}
@@ -205,12 +193,24 @@ export default function ModelExplorer() {
                 <tr
                   key={m.id}
                   onClick={() => navigate(`/models/${encodeURIComponent(m.slug)}`)}
-                  className="cursor-pointer border-t border-neutral-800/60 hover:bg-neutral-900"
+                  className="group cursor-pointer border-t border-neutral-800/60 hover:bg-neutral-900"
                 >
-                  <td className="px-3 py-2 text-neutral-100">
-                    <span className="block max-w-56 truncate" title={m.name}>
-                      {m.name}
-                    </span>
+                  <td className="sticky left-0 z-10 bg-neutral-950 px-3 py-2 text-neutral-100 group-hover:bg-neutral-900">
+                    <div className="flex max-w-56 items-center gap-2">
+                      <span className="block min-w-0 flex-1 truncate" title={m.name}>
+                        {m.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openModel(m.slug)
+                        }}
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-neutral-500 hover:text-neutral-200"
+                      >
+                        Peek
+                      </button>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-neutral-400">
                     {m.dev ? (
@@ -226,26 +226,18 @@ export default function ModelExplorer() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-neutral-400">{m.released ?? '—'}</td>
+                  <td className="px-3 py-2 text-right text-neutral-300">{fmtTokens(m.ctx)}</td>
+                  <td className="px-3 py-2 text-right text-neutral-300">{fmtTokens(m.maxOut)}</td>
+                  <td className="px-3 py-2 text-right text-neutral-300">{fmtPrice(m.priceIn)}</td>
+                  <td className="px-3 py-2 text-right text-neutral-300">{fmtPrice(m.priceOut)}</td>
                   <td className="px-3 py-2 text-right text-neutral-300">
-                    {m.ctx == null ? '—' : m.ctx.toLocaleString()}
+                    {fmtElo(m.scores.lmarena_text_overall?.score)}
+                  </td>
+                  <td className={`px-3 py-2 text-right ${deltaColorClass(eloDeltaByModelId.get(m.id))}`}>
+                    {fmtDelta(eloDeltaByModelId.get(m.id))}
                   </td>
                   <td className="px-3 py-2 text-right text-neutral-300">
-                    {m.maxOut == null ? '—' : m.maxOut.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-2 text-right text-neutral-300">{fmt(m.priceIn)}</td>
-                  <td className="px-3 py-2 text-right text-neutral-300">{fmt(m.priceOut)}</td>
-                  <td className="px-3 py-2 text-right text-neutral-300">
-                    {m.scores.lmarena_text_overall
-                      ? Math.round(m.scores.lmarena_text_overall.score)
-                      : '—'}
-                  </td>
-                  <td className={`px-3 py-2 text-right ${deltaClass(eloDeltaByModelId.get(m.id))}`}>
-                    {formatDelta(eloDeltaByModelId.get(m.id))}
-                  </td>
-                  <td className="px-3 py-2 text-right text-neutral-300">
-                    {m.scores.swe_bench_verified
-                      ? m.scores.swe_bench_verified.score.toFixed(1)
-                      : '—'}
+                    {fmtScore(m.scores.swe_bench_verified?.score)}
                   </td>
                   <td className="px-3 py-2 text-neutral-400">
                     {m.open === 1 ? 'open' : m.open === 0 ? 'closed' : '—'}

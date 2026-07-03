@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import LabLogo from '../components/LabLogo'
+import { useModelDrawer } from '../components/ModelDrawer'
 import { loadBenchmarks, loadElo, loadMeta, loadModels, useData, type Benchmark, type BenchmarkResult, type Model } from '../lib/data'
-import { colorForDark } from '../lib/theme'
+import { CONFIDENCE_CLASS, CONFIDENCE_LABEL, confidenceTier, fmtCount, fmtDelta, fmtElo, fmtPercent, fmtPrice } from '../lib/format'
+import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import type { EChartsCoreOption } from 'echarts/core'
 
@@ -82,8 +84,10 @@ interface LeagueRow {
   name: string
   dev: string | null
   devName: string | null
+  open: number | null
   consensus: number
   categoryScores: Partial<Record<LeagueCategoryKey, LeagueCell>>
+  scoredSignalCount: number
 }
 
 function latestBestResultsForBenchmark(benchmark: Benchmark) {
@@ -145,6 +149,7 @@ export default function Overview() {
   const { data: eloHistory, loading: eloLoading, error: eloError } = useData(loadTextOverallElo)
   const { data: benchmarks } = useData(loadBenchmarks)
   const navigate = useNavigate()
+  const { openModel } = useModelDrawer()
   const [devFilter, setDevFilter] = useState<string | null>(null)
   const [openOnly, setOpenOnly] = useState(false)
   const [showPareto, setShowPareto] = useState(true)
@@ -315,14 +320,21 @@ export default function Overview() {
         }
         if (blendedPercentiles.length === 0) return null
 
+        const scoredSignalCount = Object.values(categoryScores).reduce(
+          (sum, cell) => sum + (cell?.benchmarkCount ?? 0),
+          0,
+        )
+
         return {
           modelId: model.id,
           slug: model.slug,
           name: model.name,
           dev: model.dev,
           devName: model.devName,
+          open: model.open,
           consensus: blendedPercentiles.reduce((sum, value) => sum + value, 0) / blendedPercentiles.length,
           categoryScores,
+          scoredSignalCount,
         }
       })
       .filter((row): row is LeagueRow => row != null)
@@ -338,6 +350,105 @@ export default function Overview() {
         })
         .slice(0, leagueLimit),
     [leagueRows, leagueSortBy, leagueLimit],
+  )
+
+  const overviewInsights = useMemo(() => {
+    const insights: Array<{ key: string; label: string; value: string; detail: string; slug: string }> = []
+    const modelByLeagueId = new Map((models ?? []).map((model) => [model.id, model]))
+    const sortedRows = [...leagueRows].sort((a, b) => b.consensus - a.consensus || a.name.localeCompare(b.name))
+    const frontierLeader = sortedRows[0]
+    if (frontierLeader) {
+      insights.push({
+        key: 'frontier-leader',
+        label: 'Frontier leader',
+        value: frontierLeader.name,
+        detail: fmtPercent(frontierLeader.consensus),
+        slug: frontierLeader.slug,
+      })
+    }
+
+    if (models && eloHistory) {
+      const pricedEloModels = models
+        .map((model) => {
+          const series = eloHistory.series.find((entry) => entry.modelId === model.id)
+          const latestElo = series?.elo.at(-1)
+          return model.priceOut != null && model.priceOut > 0 && model.scores.lmarena_text_overall != null && latestElo != null
+            ? { model, price: model.priceOut, elo: latestElo }
+            : null
+        })
+        .filter((entry): entry is { model: Model; price: number; elo: number } => entry != null)
+        .sort((a, b) => a.price - b.price || b.elo - a.elo)
+      const cheapestQuartile = pricedEloModels.slice(0, Math.max(1, Math.ceil(pricedEloModels.length / 4)))
+      const bestValue = cheapestQuartile.sort((a, b) => b.elo - a.elo || a.price - b.price)[0]
+      if (bestValue) {
+        insights.push({
+          key: 'best-value',
+          label: 'Best value',
+          value: bestValue.model.name,
+          detail: `${fmtPrice(bestValue.price)} out · ${fmtElo(bestValue.elo)}`,
+          slug: bestValue.model.slug,
+        })
+      }
+    }
+
+    const bestOpen = sortedRows.find((row) => row.open === 1)
+    if (bestOpen) {
+      insights.push({
+        key: 'best-open',
+        label: 'Best open model',
+        value: bestOpen.name,
+        detail: fmtPercent(bestOpen.consensus),
+        slug: bestOpen.slug,
+      })
+    }
+
+    if (models && eloHistory) {
+      let biggestMover: { model: Model; delta: number } | null = null
+      for (const series of eloHistory.series) {
+        const latestTime = series.t.at(-1)
+        const latestElo = series.elo.at(-1)
+        if (latestTime == null || latestElo == null) continue
+        const previousIndex = lastIndexAtOrBefore(series.t, latestTime - 30 * 24 * 60 * 60 * 1000)
+        if (previousIndex < 0) continue
+        const delta = latestElo - series.elo[previousIndex]
+        const model = modelByLeagueId.get(series.modelId)
+        if (!model || delta <= 0) continue
+        if (!biggestMover || delta > biggestMover.delta) biggestMover = { model, delta }
+      }
+      if (biggestMover) {
+        insights.push({
+          key: 'biggest-mover',
+          label: 'Biggest mover',
+          value: biggestMover.model.name,
+          detail: fmtDelta(biggestMover.delta),
+          slug: biggestMover.model.slug,
+        })
+      }
+    }
+
+    return insights
+  }, [models, eloHistory, leagueRows])
+
+  const bestCategoryRows = useMemo(
+    () =>
+      LEAGUE_CATEGORIES.map((category) => {
+        const row = leagueRows
+          .filter((entry) => entry.categoryScores[category.key])
+          .sort(
+            (a, b) =>
+              (b.categoryScores[category.key]?.percentile ?? -1) -
+                (a.categoryScores[category.key]?.percentile ?? -1) || a.name.localeCompare(b.name),
+          )[0]
+
+        return row ? { category, row, cell: row.categoryScores[category.key] } : null
+      }).filter(
+        (entry): entry is {
+          category: (typeof LEAGUE_CATEGORIES)[number]
+          row: LeagueRow
+          cell: LeagueCell
+        } => entry != null && entry.cell != null,
+      ),
+    [leagueRows],
   )
 
   const option = useMemo<EChartsCoreOption | null>(() => {
@@ -440,12 +551,11 @@ export default function Overview() {
   if (!models || !meta) return null
 
   const orgs = new Set(models.map((m) => m.dev).filter(Boolean)).size
-
   const stats = [
-    { label: 'Models', value: meta.counts.models.toLocaleString() },
-    { label: 'Organizations', value: String(orgs) },
-    { label: 'Benchmark results', value: meta.counts.benchmarkResults.toLocaleString() },
-    { label: 'Price points', value: meta.counts.priceComponents.toLocaleString() },
+    { label: 'Models', value: fmtCount(meta.counts.models) },
+    { label: 'Organizations', value: fmtCount(orgs) },
+    { label: 'Benchmark results', value: fmtCount(meta.counts.benchmarkResults) },
+    { label: 'Price points', value: fmtCount(meta.counts.priceComponents) },
     { label: 'Data as of', value: meta.generatedAt.slice(0, 10) },
     ...(deepsweSignal
       ? [
@@ -488,6 +598,54 @@ export default function Overview() {
           )
         })}
       </div>
+
+      {overviewInsights.length > 0 ? (
+        <section>
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-neutral-100">What changed</h2>
+            <p className="mt-1 text-xs text-neutral-500">Current leaders and movement derived from live model data.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {overviewInsights.map((insight) => (
+              <button
+                key={insight.key}
+                onClick={() => openModel(insight.slug)}
+                className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 text-left transition hover:border-cyan-700"
+              >
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">{insight.label}</div>
+                <div className="mt-2 truncate text-sm font-semibold text-neutral-100" title={insight.value}>
+                  {insight.value}
+                </div>
+                <div className="mt-1 text-xs text-cyan-300">{insight.detail}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {bestCategoryRows.length > 0 ? (
+        <section>
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-neutral-100">Best for each category</h2>
+            <p className="mt-1 text-xs text-neutral-500">Top percentile model in each league category.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {bestCategoryRows.map(({ category, row, cell }) => (
+              <button
+                key={category.key}
+                onClick={() => openModel(row.slug)}
+                className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 text-left transition hover:border-cyan-700"
+              >
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">{category.label}</div>
+                <div className="mt-2 truncate text-sm font-semibold text-neutral-100" title={row.name}>
+                  {shortName(row.slug)}
+                </div>
+                <div className="mt-1 text-xs text-emerald-300">{fmtPercent(cell.percentile)}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -557,18 +715,35 @@ export default function Overview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/60">
-                {displayedLeagueRows.map((row, index) => (
-                  <tr key={row.modelId} className="hover:bg-neutral-800/30">
+                {displayedLeagueRows.map((row, index) => {
+                  const rowConfidence = confidenceTier(row.scoredSignalCount)
+
+                  return (
+                    <tr key={row.modelId} className="hover:bg-neutral-800/30">
                     <td className="sticky left-0 z-10 bg-neutral-900/95 px-4 py-3">
-                      <button
-                        onClick={() => navigate(`/models/${encodeURIComponent(row.slug)}`)}
-                        className="flex max-w-56 items-center gap-2 text-left font-medium text-neutral-100 hover:text-cyan-300"
-                      >
-                        <span className="w-5 shrink-0 text-right text-[10px] text-neutral-500">#{index + 1}</span>
-                        <span className="truncate" title={row.name}>
-                          {row.name}
-                        </span>
-                      </button>
+                      <div className="flex max-w-56 items-center gap-2">
+                        <button
+                          onClick={() => navigate(`/models/${encodeURIComponent(row.slug)}`)}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left font-medium text-neutral-100 hover:text-cyan-300"
+                        >
+                          <span className="w-5 shrink-0 text-right text-[10px] text-neutral-500">#{index + 1}</span>
+                          <span className="truncate" title={row.name}>
+                            {row.name}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openModel(row.slug)
+                          }}
+                          className="shrink-0 rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-400 hover:border-cyan-600 hover:text-cyan-300"
+                          title={`Peek at ${row.name}`}
+                          aria-label={`Peek at ${row.name}`}
+                        >
+                          Peek
+                        </button>
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex justify-center">
@@ -576,7 +751,17 @@ export default function Overview() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right font-semibold text-cyan-300">
-                      {row.consensus.toFixed(1)}%
+                      <div className="flex items-center justify-end gap-2">
+                        <span>{fmtPercent(row.consensus)}</span>
+                        <span
+                          className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${CONFIDENCE_CLASS[rowConfidence]}`}
+                          title={`${CONFIDENCE_LABEL[rowConfidence]} confidence · ${fmtCount(
+                            row.scoredSignalCount,
+                          )} scored signals`}
+                        >
+                          {fmtCount(row.scoredSignalCount)}
+                        </span>
+                      </div>
                     </td>
                     {LEAGUE_CATEGORIES.map((category) => {
                       const cell = row.categoryScores[category.key]
@@ -601,17 +786,18 @@ export default function Overview() {
                         <td
                           key={category.key}
                           className={`px-3 py-3 text-right font-medium ${tone}`}
-                          title={`${category.label}: ${cell.percentile.toFixed(1)} percentile average across ${
-                            cell.benchmarkCount
-                          } benchmark${cell.benchmarkCount === 1 ? '' : 's'}`}
+                          title={`${category.label}: ${fmtPercent(cell.percentile)} percentile average across ${fmtCount(
+                            cell.benchmarkCount,
+                          )} benchmark${cell.benchmarkCount === 1 ? '' : 's'}`}
                         >
-                          <div>{cell.percentile.toFixed(1)}%</div>
-                          <div className="text-[10px] opacity-70">{cell.benchmarkCount} bench</div>
+                          <div>{fmtPercent(cell.percentile)}</div>
+                          <div className="text-[10px] opacity-70">{fmtCount(cell.benchmarkCount)} bench</div>
                         </td>
                       )
                     })}
-                  </tr>
-                ))}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

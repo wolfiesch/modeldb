@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useNavigate } from 'react-router'
+import ChartState, { resolveChartStatus } from '../components/ChartState'
 import {
   loadBenchmarkTimeseries,
   loadElo,
@@ -8,6 +9,7 @@ import {
   type BenchmarkTimeseriesFile,
   type EloFile,
 } from '../lib/data'
+import { fmtDate, fmtElo } from '../lib/format'
 import { labLabel } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import '../lib/useECharts'
@@ -130,7 +132,7 @@ const loadCodingElo = () => loadElo('text_coding')
 
 export default function Race() {
   const [kind, setKind] = useState<SeriesKind>('text_overall')
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState<number | null>(null)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState<number>(1)
   const stepMs = useMemo(() => Math.round(800 / speed), [speed])
@@ -164,32 +166,46 @@ export default function Race() {
   const metric: MetricKind = regime.source === 'elo' ? 'elo' : 'score'
 
   const timeline = useMemo(() => (activeData ? weeklyTimeline(activeData) : []), [activeData])
-  const currentTime = timeline[index] ?? timeline[0] ?? null
+  const denseStartIndex = useMemo(
+    () => (activeData ? findDenseStartIndex(activeData, metric, timeline, TOP_N) : 0),
+    [activeData, metric, timeline],
+  )
+  const currentIndex = Math.min(index ?? denseStartIndex, Math.max(0, timeline.length - 1))
+  const currentTime = timeline[currentIndex] ?? null
 
   useEffect(() => {
-    setIndex(0)
+    setIndex(denseStartIndex)
     setPlaying(false)
-  }, [kind])
+  }, [denseStartIndex, kind])
 
   useEffect(() => {
-    if (index >= timeline.length) setIndex(Math.max(0, timeline.length - 1))
+    if (index != null && index >= timeline.length) setIndex(Math.max(0, timeline.length - 1))
   }, [index, timeline.length])
 
   useEffect(() => {
     if (!playing || timeline.length < 2) return
     const id = window.setInterval(() => {
-      setIndex((current) => (current >= timeline.length - 1 ? 0 : current + 1))
+      setIndex((current) => {
+        const resolvedIndex = current ?? denseStartIndex
+        return resolvedIndex >= timeline.length - 1 ? 0 : resolvedIndex + 1
+      })
     }, stepMs)
     return () => window.clearInterval(id)
-  }, [playing, timeline.length, stepMs])
+  }, [playing, timeline.length, stepMs, denseStartIndex])
 
   const rows = useMemo(() => {
     if (!activeData || currentTime == null) return []
     return topAtTime(activeData, metric, currentTime, TOP_N)
   }, [activeData, currentTime, metric])
   const valueFormat = valueFormatForRows(regime, rows)
-  const dateLabel = currentTime == null ? 'No date' : formatDate(currentTime)
+  const dateLabel = currentTime == null ? 'No date' : fmtDate(new Date(currentTime).toISOString().slice(0, 10))
   const sourceLabel = activeBenchmark?.key ?? regime.description
+  const chartStatus = resolveChartStatus({
+    loading,
+    error,
+    hasData: !!activeData && timeline.length > 0,
+    rowCount: rows.length,
+  })
 
   const rowsRef = useRef<RaceRow[]>([])
   rowsRef.current = rows
@@ -293,9 +309,6 @@ export default function Race() {
     }
   }
 
-  if (loading) return <div className="text-neutral-500">Loading…</div>
-  if (error) return <div className="text-red-400">{error}</div>
-  if (!activeData) return <div className="text-neutral-500">No data found for {regime.label}.</div>
 
   return (
     <div className="space-y-4">
@@ -311,7 +324,11 @@ export default function Race() {
           {REGIMES.map((candidate) => (
             <button
               key={candidate.kind}
-              onClick={() => setKind(candidate.kind)}
+              onClick={() => {
+                setIndex(null)
+                setPlaying(false)
+                setKind(candidate.kind)
+              }}
               className={`px-3 py-1.5 text-xs ${
                 kind === candidate.kind
                   ? 'bg-neutral-700 text-white'
@@ -329,7 +346,7 @@ export default function Race() {
           <div>
             <div className="text-3xl font-semibold tracking-tight text-neutral-100">{dateLabel}</div>
             <div className="mt-1 text-xs text-neutral-500">
-              {sourceLabel} · Frame {timeline.length === 0 ? 0 : index + 1} of {timeline.length}
+              {sourceLabel} · Frame {timeline.length === 0 ? 0 : currentIndex + 1} of {timeline.length}
             </div>
           </div>
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
@@ -356,20 +373,22 @@ export default function Race() {
               type="range"
               min={0}
               max={Math.max(0, timeline.length - 1)}
-              value={Math.min(index, Math.max(0, timeline.length - 1))}
+              value={currentIndex}
               onChange={handleScrub}
               className="h-2 min-w-56 accent-neutral-200"
               aria-label="Race date"
             />
           </div>
         </div>
-        {rows.length > 0 ? (
+        <ChartState
+          status={chartStatus}
+          minHeight={620}
+          errorLabel={error ?? undefined}
+          emptyLabel="No leaderboard data for this frame."
+          footer={{ source: 'LMArena ELO', shown: rows.length, total: activeData?.models.length, updated: dateLabel }}
+        >
           <div ref={chartHostRef} className="h-[620px] w-full cursor-pointer" />
-        ) : (
-          <div className="py-16 text-center text-sm text-neutral-500">
-            No {regime.metricName.toLowerCase()} data for this date.
-          </div>
-        )}
+        </ChartState>
       </div>
     </div>
   )
@@ -511,6 +530,12 @@ function topAtTime(dataset: RaceDataset, metric: MetricKind, t: number, limit: n
   return [...bestByModel.values()].sort((a, b) => b.value - a.value).slice(0, limit)
 }
 
+function findDenseStartIndex(dataset: RaceDataset, metric: MetricKind, timeline: number[], limit: number): number {
+  const minimumRows = Math.min(8, limit)
+  const startIndex = timeline.findIndex((time) => topAtTime(dataset, metric, time, limit).length >= minimumRows)
+  return startIndex === -1 ? 0 : startIndex
+}
+
 function latestPointAtOrBefore(series: RaceSeries, metric: MetricKind, target: number): number | null {
   if (metric === 'elo' && isEloSeries(series)) return latestAtOrBefore(series.t, series.elo, target)
   if (metric === 'score' && isBenchmarkSeries(series)) return latestAtOrBefore(series.t, series.score, target)
@@ -552,13 +577,13 @@ function valueFormatForRows(regime: Regime, rows: RaceRow[]): ValueFormat {
 function formatMetric(value: number, format: ValueFormat): string {
   switch (format) {
     case 'elo':
-      return String(Math.round(value))
+      return fmtElo(value)
     case 'fractionPercent':
       return `${(value * 100).toFixed(1)}%`
     case 'percentScore':
       return `${value.toFixed(1)}%`
     case 'index':
-      return value >= 100 ? value.toFixed(0) : value.toFixed(1)
+      return value >= 100 ? fmtElo(value) : value.toFixed(1)
   }
 }
 
@@ -570,11 +595,3 @@ function niceAxisMax(rows: RaceRow[], format: ValueFormat): number | undefined {
   return Math.ceil(max / step) * step
 }
 
-function formatDate(t: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(t))
-}

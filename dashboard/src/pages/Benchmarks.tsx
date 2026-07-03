@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
+import ChartState, { resolveChartStatus } from '../components/ChartState'
 import { loadBenchmarks, loadModels, useData, type BenchmarkResult } from '../lib/data'
+import { fmtCount, fmtElo, fmtScore } from '../lib/format'
 import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
@@ -19,7 +21,7 @@ const FEATURED_BENCHMARK_FALLBACK_PRIORITY = Object.keys(FEATURED_BENCHMARK_PRIO
 
 export default function Benchmarks() {
   const { data: benchmarks, loading, error } = useData(loadBenchmarks)
-  const { data: models } = useData(loadModels)
+  const { data: models, loading: modelsLoading, error: modelsError } = useData(loadModels)
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [benchId, setBenchId] = useState(() => params.get('b') ?? DEFAULT_BENCHMARK_ID)
@@ -45,6 +47,10 @@ export default function Benchmarks() {
     })
   }, [benchmarks])
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
+  const formatBenchmarkScore = useMemo(() => {
+    const metric = `${bench?.id ?? ''} ${bench?.metricDefault ?? ''}`.toLowerCase()
+    return metric.includes('elo') ? fmtElo : fmtScore
+  }, [bench])
 
   // Latest result per model (results are ordered by measured_at asc).
   const latest = useMemo(() => {
@@ -78,7 +84,7 @@ export default function Benchmarks() {
       grid: { left: 150, right: 48, top: 8, bottom: 32 },
       xAxis: {
         type: 'value',
-        axisLabel: { color: '#a3a3a3' },
+        axisLabel: { color: '#a3a3a3', formatter: (value: number) => formatBenchmarkScore(value) },
         splitLine: { lineStyle: { color: '#262626' } },
       },
       yAxis: {
@@ -91,7 +97,7 @@ export default function Benchmarks() {
         formatter: (p: { dataIndex: number }) => {
           const r = rows[p.dataIndex]
           const m = modelById.get(r.modelId)
-          return `<b>${m?.name ?? r.modelId}</b><br/>${labLabel(m?.dev)}<br/>${r.score}${
+          return `<b>${m?.name ?? r.modelId}</b><br/>${labLabel(m?.dev)}<br/>${formatBenchmarkScore(r.score)}${
             r.selfReported === 1 ? ' · self-reported' : ''
           }`
         },
@@ -113,7 +119,7 @@ export default function Benchmarks() {
         },
       ],
     }
-  }, [latest, models, modelById])
+  }, [latest, models, modelById, formatBenchmarkScore])
 
   const scatterOption = useMemo<EChartsCoreOption | null>(() => {
     if (latest.length === 0 || !models) return null
@@ -141,7 +147,7 @@ export default function Benchmarks() {
         scale: true,
         nameLocation: 'middle',
         nameGap: 30,
-        axisLabel: { color: '#a3a3a3' },
+        axisLabel: { color: '#a3a3a3', formatter: (value: number) => formatBenchmarkScore(value) },
         nameTextStyle: { color: '#737373' },
         splitLine: { lineStyle: { color: '#262626' } },
       },
@@ -156,9 +162,9 @@ export default function Benchmarks() {
         trigger: 'item',
         formatter: (p: { data: { meta: (typeof pts)[number] } }) => {
           const d = p.data.meta
-          return `<b>${d.name}</b><br/>${labLabel(d.dev)}<br/>score ${d.score} · $${d.costPerPoint.toFixed(
-            4,
-          )}/point${d.selfReported === 1 ? ' · self-reported' : ''}`
+          return `<b>${d.name}</b><br/>${labLabel(d.dev)}<br/>score ${formatBenchmarkScore(
+            d.score,
+          )} · $${d.costPerPoint.toFixed(4)}/point${d.selfReported === 1 ? ' · self-reported' : ''}`
         },
       },
       series: [
@@ -173,17 +179,26 @@ export default function Benchmarks() {
         },
       ],
     }
-  }, [latest, models, modelById])
+  }, [latest, models, modelById, formatBenchmarkScore])
 
   const barRef = useECharts(barOption)
   const scatterRef = useECharts(scatterOption, (params) => {
     const p = params as { data?: { meta?: { slug?: string } } }
     if (p.data?.meta?.slug) navigate(`/models/${encodeURIComponent(p.data.meta.slug)}`)
   })
-
-  if (loading) return <div className="text-neutral-500">Loading…</div>
-  if (error) return <div className="text-red-400">{error}</div>
-  if (!benchmarks) return null
+  const barRowCount = Math.min(latest.length, 40)
+  const hasBarData = barOption != null && barRowCount > 0
+  const chartError = error ?? modelsError
+  const chartStatus = resolveChartStatus({
+    loading: loading || modelsLoading,
+    error: chartError,
+    hasData: hasBarData,
+    rowCount: hasBarData ? barRowCount : 0,
+  })
+  const scoredModelCount = latest.length
+  const hasSelfReported = latest.some((r) => r.selfReported === 1)
+  const directionLabel = bench?.higherIsBetter === 0 ? 'Lower is better' : 'Higher is better'
+  const provenanceNote = `${directionLabel}.${hasSelfReported ? ' Faded / amber-outlined marks are self-reported.' : ''}`
 
   return (
     <div className="space-y-4">
@@ -213,19 +228,38 @@ export default function Benchmarks() {
         ))}
       </div>
       {bench && (
-        <div className="text-xs text-neutral-500">
-          {bench.id === 'deepswe' ? 'long-horizon coding' : (bench.category ?? 'uncategorized')} · metric:{' '}
-          {bench.metricDefault ?? '-'} · {latest.length} models{' '}
-          {bench.sourceUrl && (
-            <a
-              href={bench.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-400 hover:underline"
-            >
-              source
-            </a>
-          )}
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="text-xs text-neutral-500">
+            {bench.id === 'deepswe' ? 'long-horizon coding' : (bench.category ?? 'uncategorized')} · metric:{' '}
+            {bench.metricDefault ?? '-'} · {fmtCount(scoredModelCount)} models{' '}
+            {bench.sourceUrl && (
+              <a
+                href={bench.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-400 hover:underline"
+              >
+                source
+              </a>
+            )}
+          </div>
+          <div className="rounded border border-neutral-800 bg-neutral-900 p-3 text-xs text-neutral-400">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
+              Benchmark metadata
+            </div>
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+              <dt className="text-neutral-500">Label</dt>
+              <dd className="truncate text-neutral-200">{bench.name}</dd>
+              <dt className="text-neutral-500">Category</dt>
+              <dd className="text-neutral-300">
+                {bench.id === 'deepswe' ? 'long-horizon coding' : (bench.category ?? 'uncategorized')}
+              </dd>
+              <dt className="text-neutral-500">Models scored</dt>
+              <dd className="text-neutral-300">{fmtCount(scoredModelCount)}</dd>
+              <dt className="text-neutral-500">Direction</dt>
+              <dd className="text-neutral-300">{directionLabel}</dd>
+            </dl>
+          </div>
         </div>
       )}
       <div className="grid gap-6 xl:grid-cols-2">
@@ -236,11 +270,20 @@ export default function Benchmarks() {
           <p className="mb-2 text-xs text-neutral-500">
             Faded / amber-outlined bars are self-reported scores.
           </p>
-          {barOption ? (
+          <ChartState
+            status={chartStatus}
+            minHeight={640}
+            errorLabel={chartError ?? 'Unable to load benchmark results.'}
+            emptyLabel="No models have scored results for the selected benchmark."
+            footer={{
+              source: bench?.name,
+              shown: barRowCount,
+              total: scoredModelCount,
+              note: provenanceNote,
+            }}
+          >
             <div ref={barRef} className="h-[640px] w-full" />
-          ) : (
-            <div className="py-16 text-center text-sm text-neutral-500">No results.</div>
-          )}
+          </ChartState>
         </div>
         <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
           <h2 className="mb-1 text-sm font-semibold text-neutral-200">Cost per point</h2>

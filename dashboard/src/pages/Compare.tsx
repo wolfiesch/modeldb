@@ -3,8 +3,9 @@ import { useSearchParams } from 'react-router'
 import { loadElo, loadModels, useData, type Model } from '../lib/data'
 import { LabLogo } from '../components/LabLogo'
 import { labSearchValues } from '../lib/labs'
-import { colorForDark } from '../lib/theme'
+import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
+import { fmtElo } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 
 const loadOverallElo = () => loadElo('text_overall')
@@ -32,6 +33,13 @@ interface SharedScore {
 }
 
 const EMPTY_VALUE = 'N/A'
+
+interface SuggestedPair {
+  key: string
+  label: string
+  a: Model
+  b: Model
+}
 
 function formatNumber(value: number | null | undefined, digits = 2) {
   if (value == null) return EMPTY_VALUE
@@ -92,6 +100,74 @@ export default function Compare() {
   const modelA = paramModel(params, 'a', models)
   const modelB = paramModel(params, 'b', models)
   const selectedCount = Number(Boolean(modelA)) + Number(Boolean(modelB))
+  const suggestedPairs = useMemo<SuggestedPair[]>(() => {
+    if (!models) return []
+
+    const scoredModels = models
+      .filter((model) => Number.isFinite(model.scores.lmarena_text_overall?.score))
+      .sort(
+        (left, right) =>
+          (right.scores.lmarena_text_overall?.score ?? -Infinity) -
+          (left.scores.lmarena_text_overall?.score ?? -Infinity),
+      )
+
+    const pairs: SuggestedPair[] = []
+    const seen = new Set<string>()
+    const addPair = (label: string, a: Model | undefined, b: Model | undefined) => {
+      if (!a || !b || a.slug === b.slug) return
+      const key = [a.slug, b.slug].sort().join('::')
+      if (seen.has(key)) return
+      seen.add(key)
+      pairs.push({ key, label, a, b })
+    }
+
+    addPair('Top Arena leaders', scoredModels[0], scoredModels[1])
+
+    const differentDeveloperA = scoredModels.find((model) => model.dev)
+    addPair(
+      'Best cross-lab matchup',
+      differentDeveloperA,
+      scoredModels.find((model) => model.dev && model.dev !== differentDeveloperA?.dev),
+    )
+
+    addPair(
+      'Open vs closed',
+      scoredModels.find((model) => model.open === 1),
+      scoredModels.find((model) => model.open === 0),
+    )
+
+    const sameDeveloperA = scoredModels.find((candidate, index) =>
+      scoredModels
+        .slice(index + 1)
+        .some((model) => model.dev && model.dev === candidate.dev),
+    )
+    addPair(
+      'Same-lab faceoff',
+      sameDeveloperA,
+      scoredModels.find(
+        (model) => model.slug !== sameDeveloperA?.slug && model.dev === sameDeveloperA?.dev,
+      ),
+    )
+
+    const sameFamilyA = scoredModels.find((candidate, index) =>
+      scoredModels
+        .slice(index + 1)
+        .some((model) => model.family && model.family === candidate.family),
+    )
+    addPair(
+      'Family matchup',
+      sameFamilyA,
+      scoredModels.find(
+        (model) => model.slug !== sameFamilyA?.slug && model.family === sameFamilyA?.family,
+      ),
+    )
+
+    for (let index = 0; index < scoredModels.length - 1 && pairs.length < 6; index += 1) {
+      addPair('Popular matchup', scoredModels[index], scoredModels[index + 1])
+    }
+
+    return pairs.slice(0, 6)
+  }, [models])
 
   const setModel = (side: Side, model: Model) => {
     const next = new URLSearchParams(params)
@@ -356,10 +432,64 @@ export default function Compare() {
       </div>
 
       {selectedCount < 2 ? (
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6 text-sm text-neutral-400">
-          Select {selectedCount === 0 ? 'two models' : 'one more model'} to unlock the head-to-head
-          table and charts. Query params like <span className="text-neutral-200">?a=slug&b=slug</span>{' '}
-          are supported.
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-6">
+          <div className="text-sm text-neutral-400">
+            Select {selectedCount === 0 ? 'two models' : 'one more model'} to unlock the head-to-head
+            table and charts. Query params like <span className="text-neutral-200">?a=slug&b=slug</span>{' '}
+            are supported.
+          </div>
+          {suggestedPairs.length > 0 && (
+            <div className="mt-5">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-600">
+                Popular comparisons
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {suggestedPairs.map((pair) => (
+                  <button
+                    key={pair.key}
+                    onClick={() => {
+                      const next = new URLSearchParams(params)
+                      next.set('a', pair.a.slug)
+                      next.set('b', pair.b.slug)
+                      setParams(next)
+                    }}
+                    className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 text-left transition hover:border-neutral-600"
+                  >
+                    <div className="mb-2 text-xs uppercase tracking-wide text-neutral-600">
+                      {pair.label}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm font-medium text-neutral-100">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <LabLogo
+                          dev={pair.a.dev}
+                          devName={pair.a.devName}
+                          size={16}
+                          decorative
+                          className="shrink-0"
+                        />
+                        <span className="truncate">{shortName(pair.a.slug)}</span>
+                      </span>
+                      <span className="shrink-0 text-neutral-600">vs</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <LabLogo
+                          dev={pair.b.dev}
+                          devName={pair.b.devName}
+                          size={16}
+                          decorative
+                          className="shrink-0"
+                        />
+                        <span className="truncate">{shortName(pair.b.slug)}</span>
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-neutral-500">
+                      {fmtElo(pair.a.scores.lmarena_text_overall?.score)} vs{' '}
+                      {fmtElo(pair.b.scores.lmarena_text_overall?.score)} ELO
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : modelA && modelB ? (
         <>

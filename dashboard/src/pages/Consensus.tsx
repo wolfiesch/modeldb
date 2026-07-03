@@ -5,8 +5,17 @@ import {
   DEFAULT_CONSENSUS_BENCHMARKS,
   type ConsensusRow,
 } from '../lib/consensus'
-import LabLogo from '../components/LabLogo'
-import { colorForDark } from '../lib/theme'
+import DevFilter from '../components/DevFilter'
+import {
+  fmtScore,
+  fmtPercent,
+  confidenceTier,
+  CONFIDENCE_LABEL,
+  CONFIDENCE_CLASS,
+  disagreementTier,
+  DISAGREEMENT_LABEL,
+  DISAGREEMENT_CLASS,
+} from '../lib/format'
 
 const MATRIX_BENCHMARKS = DEFAULT_CONSENSUS_BENCHMARKS
 
@@ -111,32 +120,7 @@ export default function Consensus() {
 
         <div className="flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-wider text-neutral-500">Developer</span>
-          <div className="flex flex-wrap gap-1">
-            <button
-              onClick={() => setDevFilter(null)}
-              className={`rounded border px-2 py-1 text-xs ${
-                devFilter === null
-                  ? 'border-neutral-300 bg-neutral-800 text-white'
-                  : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
-              }`}
-            >
-              All
-            </button>
-            {devs.map((d) => (
-              <button
-                key={d}
-                onClick={() => setDevFilter((cur) => (cur === d ? null : d))}
-                className={`rounded border px-2 py-1 text-xs`}
-                style={{
-                  borderColor: devFilter === d ? colorForDark(d) : 'rgba(64,64,64,0.5)',
-                  backgroundColor: devFilter === d ? 'rgba(64,64,64,0.3)' : undefined,
-                  color: devFilter === d ? '#fff' : '#a3a3a3',
-                }}
-              >
-                <LabLogo dev={d} size={12} showLabel labelClassName="max-w-20 truncate" />
-              </button>
-            ))}
-          </div>
+          <DevFilter devs={devs} value={devFilter} onChange={setDevFilter} />
         </div>
       </div>
 
@@ -166,12 +150,22 @@ export default function Consensus() {
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-3 text-center text-neutral-400">{row.benchmarkCount}</td>
-                <td className="px-3 py-3 text-right font-semibold text-cyan-400">
-                  {row.consensusScore.toFixed(1)}%
+                <td className="px-3 py-3 text-center">
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10px] ${CONFIDENCE_CLASS[confidenceTier(row.benchmarkCount)]}`}
+                    title={CONFIDENCE_LABEL[confidenceTier(row.benchmarkCount)]}
+                  >
+                    {row.benchmarkCount}
+                  </span>
                 </td>
-                <td className="px-3 py-3 text-right text-neutral-400">
+                <td className="px-3 py-3 text-right font-semibold text-cyan-400">
+                  {fmtPercent(row.consensusScore)}
+                </td>
+                <td className={`px-3 py-3 text-right ${DISAGREEMENT_CLASS[disagreementTier(row.disagreementScore)]}`}>
                   {row.disagreementScore.toFixed(1)}
+                  <span className="ml-1 text-[10px] text-neutral-500">
+                    {DISAGREEMENT_LABEL[disagreementTier(row.disagreementScore)]}
+                  </span>
                 </td>
                 {MATRIX_BENCHMARKS.map((col) => {
                   const cell = row.scores[col.id]
@@ -200,7 +194,7 @@ export default function Consensus() {
                       title={`${row.modelName} on ${col.label}\nScore: ${cell.score} (${cell.percentile.toFixed(0)}th percentile)\nRank: ${cell.rank}/${cell.total}`}
                     >
                       <div className="font-semibold">{cell.percentile.toFixed(0)}%</div>
-                      <div className="text-[10px] opacity-75">{cell.score}</div>
+                      <div className="text-[10px] opacity-75">{fmtScore(cell.score)}</div>
                     </td>
                   )
                 })}

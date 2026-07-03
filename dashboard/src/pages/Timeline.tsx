@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
 import LabLogo from '../components/LabLogo'
+import { useModelDrawer } from '../components/ModelDrawer'
 import { loadElo, loadMeta, loadModels, useData } from '../lib/data'
 import { labLabel, labSearchValues } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
@@ -17,7 +17,7 @@ export default function Timeline() {
   const { data: models, loading, error } = useData(loadModels)
   const { data: elo, loading: eloLoading, error: eloError } = useData(loadOverallElo)
   const { data: meta, loading: metaLoading, error: metaError } = useData(loadMeta)
-  const navigate = useNavigate()
+  const { openModel } = useModelDrawer()
   const [devFilter, setDevFilter] = useState<string | null>(null)
   const [query, setQuery] = useState('')
 
@@ -153,7 +153,7 @@ export default function Timeline() {
                   key={row.model.id}
                   type="button"
                   title={title}
-                  onClick={() => navigate(`/models/${encodeURIComponent(row.model.slug)}`)}
+                  onClick={() => openModel(row.model.slug)}
                   className="grid w-full grid-cols-[minmax(11rem,15rem)_1fr] items-center gap-4 rounded-md px-2 py-1 text-left hover:bg-neutral-800/60"
                 >
                   <div className="min-w-0">
