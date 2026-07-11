@@ -223,6 +223,42 @@ class DrainAcceptedQueueTests(unittest.TestCase):
         self.assertEqual(self._queue_state(queue_id), ("accepted", None))
         self.assertEqual(self._audit_count(), 0)
 
+
+    def test_drain_accepted_cli_queue_id_scopes_non_dry_run_to_one_accepted_row(self) -> None:
+        target_source_record_id = self._insert_source_record("qwen3-5-omni-plus")
+        target_queue_id = self._insert_queue_row(
+            source_record_id=target_source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        unrelated_source_record_id = self._insert_source_record("qwen3-5-omni-plus-unrelated")
+        unrelated_queue_id = self._insert_queue_row(
+            source_record_id=unrelated_source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus-unrelated"]},
+        )
+        stdout = io.StringIO()
+
+        with patch.object(resolver, "connect", return_value=_ExistingConnection(self.conn)):
+            with redirect_stdout(stdout):
+                exit_code = resolver.main(["drain-accepted", "--queue-id", str(target_queue_id)])
+
+        self.assertEqual(exit_code, 0, stdout.getvalue())
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["processed"], 1)
+        self.assertEqual(payload["aliases_upserted"], 1)
+        self.assertEqual(payload["records_updated"], 1)
+        self.assertEqual(payload["skipped"], 0)
+        self.assertEqual(self._queue_state(target_queue_id)[0], "accepted")
+        self.assertIsNotNone(self._queue_state(target_queue_id)[1])
+        self.assertEqual(self._queue_state(unrelated_queue_id), ("accepted", None))
+        self.assertIsNotNone(self._linked_alias_id(target_source_record_id))
+        self.assertIsNone(self._linked_alias_id(unrelated_source_record_id))
+        aliases = self.conn.execute("SELECT alias_string FROM model_alias ORDER BY alias_string").fetchall()
+        self.assertEqual([row[0] for row in aliases], ["alibaba-qwen3-5-omni-plus"])
+
     def test_accepted_queue_row_without_candidate_model_is_skipped_without_creating_alias(self) -> None:
         source_record_id = self._insert_source_record("unknown-qwen")
         queue_id = self._insert_queue_row(
@@ -261,6 +297,36 @@ class DrainAcceptedQueueTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(status, "pending")
         self.assertIsNone(resolved_at)
+
+    def test_drain_accepted_queue_scoped_to_queue_ids_leaves_unrelated_accepted_rows_pending(self) -> None:
+        target_source_record_id = self._insert_source_record("qwen3-5-omni-plus")
+        target_queue_id = self._insert_queue_row(
+            source_record_id=target_source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        unrelated_source_record_id = self._insert_source_record("qwen3-5-omni-plus-unrelated")
+        unrelated_queue_id = self._insert_queue_row(
+            source_record_id=unrelated_source_record_id,
+            candidate_model_id=1,
+            status="accepted",
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus-unrelated"]},
+        )
+
+        summary = resolver.drain_accepted_queue(self.conn, queue_ids=[target_queue_id])
+
+        self.assertEqual(summary["processed"], 1)
+        self.assertEqual(summary["aliases_upserted"], 1)
+        self.assertEqual(summary["records_updated"], 1)
+        self.assertEqual(summary["skipped"], 0)
+        self.assertEqual(self._queue_state(target_queue_id)[0], "accepted")
+        self.assertIsNotNone(self._queue_state(target_queue_id)[1])
+        self.assertEqual(self._queue_state(unrelated_queue_id), ("accepted", None))
+        self.assertIsNotNone(self._linked_alias_id(target_source_record_id))
+        self.assertIsNone(self._linked_alias_id(unrelated_source_record_id))
+        aliases = self.conn.execute("SELECT alias_string FROM model_alias ORDER BY alias_string").fetchall()
+        self.assertEqual([row[0] for row in aliases], ["alibaba-qwen3-5-omni-plus"])
 
     def _insert_source_record(self, source_model_id: str) -> int:
         snapshot_id = 100 + self.conn.execute("SELECT COUNT(*) FROM source_snapshot").fetchone()[0]

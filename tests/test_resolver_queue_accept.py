@@ -112,6 +112,26 @@ class AcceptQueueRowTests(unittest.TestCase):
         self.assertEqual(self._queue_row(queue_id), before)
         self.assertFalse(self._table_exists("model_alias"))
 
+    def test_refuses_pending_row_when_same_source_record_already_resolved(self) -> None:
+        self._insert_queue_row(
+            candidate_model_id=1,
+            status="accepted",
+            features={"provider_scoped_candidates": ["anthropic-claude-4-sonnet"]},
+            resolved_at="2026-07-02T20:00:00+00:00",
+        )
+        queue_id = self._insert_queue_row(
+            candidate_model_id=None,
+            status="pending",
+            features={"provider_scoped_candidates": ["alibaba-qwen3-5-omni-plus"]},
+        )
+        before = self._queue_row(queue_id)
+
+        with self.assertRaises(ValueError):
+            resolver.accept_queue_row(self.conn, queue_id=queue_id, candidate_model_id=2)
+
+        self.assertEqual(self._queue_row(queue_id), before)
+        self.assertFalse(self._table_exists("model_alias"))
+
     def _insert_queue_row(
         self,
         *,

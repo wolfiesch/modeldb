@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import ChartState, { resolveChartStatus } from '../components/ChartState'
-import { loadBenchmarks, loadModels, useData, type BenchmarkResult } from '../lib/data'
+import { EvidenceInspector } from '../components/EvidenceInspector'
+import { loadBenchmarks, loadModels, useData } from '../lib/data'
+import type { BenchmarkResult } from '../lib/data'
 import { fmtCount, fmtElo, fmtScore } from '../lib/format'
 import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
@@ -284,6 +286,38 @@ export default function Benchmarks() {
           >
             <div ref={barRef} className="h-[640px] w-full" />
           </ChartState>
+          <div className="mt-4 border-t border-neutral-800 pt-3">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Score evidence</h3>
+            <div className="max-h-56 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-neutral-900 text-left text-neutral-500">
+                  <tr>
+                    <th className="py-1 font-medium">Model</th>
+                    <th className="py-1 text-right font-medium">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latest.slice(0, 40).map((result) => {
+                    const model = modelById.get(result.modelId)
+                    return (
+                      <tr key={result.modelId} className="border-t border-neutral-800/60">
+                        <td className="py-1.5 text-neutral-300">{model?.name ?? result.modelId}</td>
+                        <td className="py-1.5 text-right">
+                          {bench ? (
+                            <EvidenceInspector
+                              benchmark={bench}
+                              result={result}
+                              label={formatBenchmarkScore(result.score)}
+                            />
+                          ) : null}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
           <h2 className="mb-1 text-sm font-semibold text-neutral-200">Cost per point</h2>

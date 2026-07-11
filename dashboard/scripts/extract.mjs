@@ -6,6 +6,7 @@ import { Database } from 'bun:sqlite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs'
+import { boundChangeFeed } from './change-feed.mjs'
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(scriptsDir, '../..')
@@ -92,6 +93,27 @@ function parseJsonObject(text) {
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
   } catch {
     return {}
+  }
+}
+
+function publicEvidenceValue(value) {
+  if (Array.isArray(value)) return value.map(publicEvidenceValue)
+  if (!value || typeof value !== 'object') {
+    return typeof value === 'string' && (value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)) ? null : value
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !/(token|secret|password|authorization|api[_-]?key|path)/i.test(key))
+      .map(([key, entry]) => [key, publicEvidenceValue(entry)])
+  )
+}
+
+function parsePublicEvidence(text) {
+  if (!text) return null
+  try {
+    return publicEvidenceValue(JSON.parse(text))
+  } catch {
+    return null
   }
 }
 
@@ -450,17 +472,20 @@ const benchmarks = q(
     : q(
         `SELECT br.model_id AS modelId, br.score, br.metric, br.rank,
                 br.self_reported AS selfReported, br.measured_at AS measuredAt,
-                ss.source_id AS sourceId, br.source_snapshot_id AS sourceSnapshotId,
-                ss.fetched_at AS fetchedAt, br.ci, br.votes,
-                br.eval_condition_json AS evalCondition
+                ss.source_id AS sourceId, s.name AS sourceName, ss.url AS sourceUrl,
+                br.source_snapshot_id AS sourceSnapshotId, ss.fetched_at AS fetchedAt,
+                br.ci, br.votes, br.eval_condition_json AS evalCondition,
+                br.raw_record_json AS rawRecord
          FROM benchmark_result br
          LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+         LEFT JOIN source s ON s.id = ss.source_id
          WHERE br.benchmark_id = ? AND br.score IS NOT NULL AND br.model_id IS NOT NULL
          ORDER BY br.measured_at`,
         [b.id]
       ).map((r) => ({
         ...r,
-        evalCondition: r.evalCondition ? JSON.parse(r.evalCondition) : null
+        evalCondition: parsePublicEvidence(r.evalCondition),
+        rawRecord: parsePublicEvidence(r.rawRecord)
       }))
   return results ? { ...b, results, unresolvedCount } : { ...b, unresolvedCount }
 })
@@ -652,6 +677,202 @@ const aliases = q(
    FROM model_alias ORDER BY model_id, source_id, alias_string`
 )
 writeJson('aliases.json', aliases)
+
+// --- 7b. changes.json -----------------------------------------------------------
+// Changes are a view over persisted observations, never a synthetic changelog.
+function extractChanges() {
+  const events = []
+  const provenance = (row) => ({
+    sourceId: row.sourceId ?? null,
+    sourceUrl: row.sourceUrl ?? null,
+    snapshotId: row.snapshotId ?? null,
+    selfReported: row.selfReported ?? null,
+    evalCondition: row.evalCondition ? JSON.parse(row.evalCondition) : null
+  })
+
+  for (const row of q(
+    `SELECT canonical_slug AS entityId, created_at AS observedAt
+     FROM model
+     WHERE created_at IS NOT NULL
+     ORDER BY created_at, canonical_slug`
+  )) {
+    events.push({
+      category: 'model_added',
+      entityId: row.entityId,
+      observedAt: row.observedAt,
+      ...provenance(row),
+      before: null,
+      after: { slug: row.entityId }
+    })
+  }
+
+  const previousResults = new Map()
+  for (const row of q(
+    `SELECT br.model_id AS modelId, br.benchmark_id AS benchmarkId, br.score, br.rank,
+            br.measured_at AS measuredAt, br.self_reported AS selfReported,
+            br.eval_condition_json AS evalCondition, ss.source_id AS sourceId,
+            ss.url AS sourceUrl, br.source_snapshot_id AS snapshotId, ss.fetched_at AS fetchedAt
+     FROM benchmark_result br
+     LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+     WHERE br.model_id IS NOT NULL AND br.score IS NOT NULL
+     ORDER BY br.model_id, br.benchmark_id, COALESCE(br.measured_at, ss.fetched_at), br.id`
+  )) {
+    const entityId = `${row.benchmarkId}:${row.modelId}:${row.sourceId ?? 'unknown'}:${row.evalCondition ?? '{}'}`
+    const after = { modelId: row.modelId, score: row.score, rank: row.rank }
+    const previous = previousResults.get(entityId)
+    if (previous && JSON.stringify(previous.after) !== JSON.stringify(after)) {
+      events.push({
+        category: 'benchmark_changed',
+        entityId,
+        observedAt: row.measuredAt ?? row.fetchedAt,
+        ...provenance(row),
+        before: previous.after,
+        after
+      })
+    }
+    previousResults.set(entityId, { after })
+  }
+
+  const previousPrices = new Map()
+  for (const row of q(
+    `SELECT pc.model_id AS modelId, pc.provider_surface_id AS providerSurfaceId,
+            pc.component, pc.unit, pc.tier_condition_json AS tierCondition,
+            pc.valid_from AS validFrom, pc.valid_to AS validTo,
+            pc.source_id AS sourceId, pc.source_snapshot_id AS snapshotId,
+            ss.url AS sourceUrl, ss.fetched_at AS fetchedAt
+     FROM price_component pc
+     LEFT JOIN source_snapshot ss ON ss.id = pc.source_snapshot_id
+     WHERE pc.model_id IS NOT NULL AND (pc.valid_from IS NOT NULL OR pc.valid_to IS NOT NULL)
+     ORDER BY pc.model_id, pc.provider_surface_id, pc.component, pc.source_id,
+              COALESCE(pc.valid_from, ss.fetched_at), pc.id`
+  )) {
+    const entityId = `${row.modelId}:${row.providerSurfaceId ?? 'none'}:${row.component}:${row.sourceId ?? 'unknown'}:${row.tierCondition ?? '{}'}`
+    const after = { modelId: row.modelId, validFrom: row.validFrom, validTo: row.validTo, unit: row.unit }
+    const previous = previousPrices.get(entityId)
+    if (previous && JSON.stringify(previous.after) !== JSON.stringify(after)) {
+      events.push({
+        category: 'price_validity_changed',
+        entityId,
+        observedAt: row.validFrom ?? row.fetchedAt,
+        ...provenance(row),
+        before: previous.after,
+        after
+      })
+    }
+    previousPrices.set(entityId, { after })
+  }
+
+  for (const row of q(
+    `SELECT ma.model_id AS modelId, ma.source_id AS sourceId, ma.alias_string AS alias,
+            ma.first_seen_at AS observedAt, ma.source_snapshot_id AS snapshotId, ss.url AS sourceUrl
+     FROM model_alias ma
+     LEFT JOIN source_snapshot ss ON ss.id = ma.source_snapshot_id
+     WHERE ma.first_seen_at IS NOT NULL
+     ORDER BY ma.first_seen_at, ma.id`
+  )) {
+    events.push({
+      category: 'alias_first_seen',
+      entityId: `${row.sourceId}:${row.alias}`,
+      observedAt: row.observedAt,
+      ...provenance(row),
+      before: null,
+      after: { modelId: row.modelId, alias: row.alias }
+    })
+  }
+
+  for (const row of q(
+    `SELECT id AS snapshotId, source_id AS sourceId, url AS sourceUrl, fetched_at AS observedAt
+     FROM source_snapshot
+     ORDER BY fetched_at, id`
+  )) {
+    events.push({
+      category: 'source_refreshed',
+      entityId: row.sourceId,
+      observedAt: row.observedAt,
+      ...provenance(row),
+      before: null,
+      after: { sourceId: row.sourceId }
+    })
+  }
+
+  return events
+    .filter((event) => event.observedAt)
+    .sort((a, b) => b.observedAt.localeCompare(a.observedAt) || a.entityId.localeCompare(b.entityId))
+}
+
+writeJson('changes.json', { generatedAt: new Date().toISOString(), ...boundChangeFeed(extractChanges()) })
+
+// --- 7c. lineage.json -----------------------------------------------------------
+function extractLineage() {
+  const lineage = Object.fromEntries(models.map((model) => [
+    String(model.id),
+    {
+      modelId: model.id, canonicalSlug: model.slug, name: model.name,
+      developerId: model.dev, developerName: model.devName, family: model.family,
+      generation: model.generation, tier: model.tier, released: model.released,
+      aliases: [], sourceTypes: [], providerEndpoints: [],
+      firstSeen: null, lastSeen: null, familyPeers: []
+    }
+  ]))
+
+  for (const row of q(
+    `SELECT ma.model_id AS modelId, ma.source_id AS sourceId, ma.alias_string AS alias,
+            ma.alias_kind AS kind, ma.resolution_method AS method, ma.confidence,
+            ma.first_seen_at AS firstSeen, ma.last_seen_at AS lastSeen,
+            ma.source_snapshot_id AS sourceSnapshotId, ss.url AS sourceUrl, ss.fetched_at AS fetchedAt
+     FROM model_alias ma
+     LEFT JOIN source_snapshot ss ON ss.id = ma.source_snapshot_id
+     WHERE ma.model_id IS NOT NULL
+     ORDER BY ma.model_id, ma.source_id, ma.alias_string`
+  )) {
+    const identity = lineage[String(row.modelId)]
+    if (!identity) continue
+    identity.aliases.push({
+      sourceId: row.sourceId, sourceUrl: row.sourceUrl, alias: row.alias, kind: row.kind,
+      method: row.method, confidence: row.confidence, firstSeen: row.firstSeen, lastSeen: row.lastSeen,
+      sourceSnapshotId: row.sourceSnapshotId, fetchedAt: row.fetchedAt
+    })
+    identity.sourceTypes.push(row.sourceId)
+    identity.firstSeen = identity.firstSeen == null || row.firstSeen < identity.firstSeen ? row.firstSeen : identity.firstSeen
+    identity.lastSeen = identity.lastSeen == null || row.lastSeen > identity.lastSeen ? row.lastSeen : identity.lastSeen
+  }
+
+  for (const row of q(
+    `SELECT ps.model_id AS modelId, ps.provider_id AS providerId, ps.surface_type AS surfaceType,
+            ps.region, ps.endpoint_model_id AS endpointModelId, ss.source_id AS sourceId,
+            ss.url AS sourceUrl, ss.fetched_at AS fetchedAt
+     FROM provider_surface ps
+     LEFT JOIN source_snapshot ss ON ss.id = ps.source_snapshot_id
+     WHERE ps.model_id IS NOT NULL
+     ORDER BY ps.model_id, ps.provider_id, ps.surface_type, ps.region, ps.endpoint_model_id`
+  )) {
+    const identity = lineage[String(row.modelId)]
+    if (!identity) continue
+    identity.providerEndpoints.push({
+      providerId: row.providerId, surfaceType: row.surfaceType, region: row.region,
+      endpointModelId: row.endpointModelId, sourceId: row.sourceId,
+      sourceUrl: row.sourceUrl, fetchedAt: row.fetchedAt
+    })
+    if (row.sourceId) identity.sourceTypes.push(row.sourceId)
+    if (row.fetchedAt) {
+      identity.firstSeen = identity.firstSeen == null || row.fetchedAt < identity.firstSeen ? row.fetchedAt : identity.firstSeen
+      identity.lastSeen = identity.lastSeen == null || row.fetchedAt > identity.lastSeen ? row.fetchedAt : identity.lastSeen
+    }
+  }
+
+  for (const identity of Object.values(lineage)) {
+    identity.sourceTypes = [...new Set(identity.sourceTypes)].sort()
+    identity.familyPeers = models
+      .filter((candidate) => candidate.id !== identity.modelId && candidate.dev === identity.developerId && candidate.family != null && candidate.family === identity.family)
+      .map((candidate) => ({
+        modelId: candidate.id, canonicalSlug: candidate.slug, name: candidate.name,
+        released: candidate.released, generation: candidate.generation
+      }))
+      .sort((a, b) => (a.released ?? '').localeCompare(b.released ?? '') || a.canonicalSlug.localeCompare(b.canonicalSlug))
+  }
+  writeJson('lineage.json', lineage)
+}
+extractLineage()
 
 // --- 8. run_options.json ---------------------------------------------------------
 const runOptionsByModel = new Map(models.map((m) => [m.id, { modelId: m.id, surfaces: [], artifacts: [] }]))

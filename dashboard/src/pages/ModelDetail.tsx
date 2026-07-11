@@ -12,13 +12,14 @@ import {
   useData,
 } from '../lib/data'
 import { LabLogo } from '../components/LabLogo'
+import { EvidenceInspector } from '../components/EvidenceInspector'
 import { labLabel } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import { useModelDrawer } from '../components/ModelDrawer'
 import { fmtDate, fmtElo, fmtPrice, fmtScore, fmtTokens } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
-import type { Model, RunOptionPrice, RunOptionVariant } from '../lib/data'
+import type { Benchmark, BenchmarkResult, Model, RunOptionPrice, RunOptionVariant } from '../lib/data'
 
 const loadOverall = () => loadElo('text_overall')
 const loadCoding = () => loadElo('text_coding')
@@ -121,6 +122,10 @@ function variantSummary(variant: RunOptionVariant) {
 function hasModality(modalities: string[], modality: string) {
   const needle = modality.toLowerCase()
   return modalities.some((entry) => entry.toLowerCase().includes(needle))
+}
+
+function evidenceResult(benchmark: Benchmark, modelId: number, score: BenchmarkResult): BenchmarkResult {
+  return benchmark.results?.filter((result) => result.modelId === modelId).at(-1) ?? score
 }
 
 export default function ModelDetail() {
@@ -461,21 +466,44 @@ export default function ModelDetail() {
             ) : (
               <table className="w-full text-sm">
                 <tbody>
-                  {scoreEntries.map(([id, s]) => (
-                    <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
-                      <td className="py-1.5 text-neutral-300">{benchById.get(id)?.name ?? id}</td>
-                      <td className="py-1.5 text-right text-neutral-100">
-                        {id.startsWith('lmarena_') ? fmtElo(s.score) : fmtScore(s.score)}
-                      </td>
-                      <td className="w-24 py-1.5 pl-3 text-right">
-                        {s.selfReported === 1 && (
-                          <span className="rounded bg-amber-950 px-1.5 py-0.5 text-[10px] text-amber-400">
-                            self-reported
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {scoreEntries.map(([id, s]) => {
+                    const benchmark = benchById.get(id) ?? {
+                      id,
+                      name: id,
+                      category: null,
+                      metricDefault: null,
+                      higherIsBetter: 1,
+                      sourceUrl: null,
+                    }
+                    const score: BenchmarkResult = {
+                      modelId: model.id,
+                      score: s.score,
+                      metric: null,
+                      rank: s.rank,
+                      selfReported: s.selfReported,
+                      measuredAt: s.measuredAt,
+                    }
+                    const displayScore = id.startsWith('lmarena_') ? fmtElo(s.score) : fmtScore(s.score)
+                    return (
+                      <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
+                        <td className="py-1.5 text-neutral-300">{benchmark.name}</td>
+                        <td className="py-1.5 text-right">
+                          <EvidenceInspector
+                            benchmark={benchmark}
+                            result={evidenceResult(benchmark, model.id, score)}
+                            label={displayScore}
+                          />
+                        </td>
+                        <td className="w-24 py-1.5 pl-3 text-right">
+                          {s.selfReported === 1 && (
+                            <span className="rounded bg-amber-950 px-1.5 py-0.5 text-[10px] text-amber-400">
+                              self-reported
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}

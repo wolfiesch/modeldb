@@ -225,6 +225,13 @@ CREATE TABLE IF NOT EXISTS price_component (
   source_snapshot_id  INTEGER REFERENCES source_snapshot(id)
 );
 
+-- Every source snapshot that independently observed a coalesced price fact.
+CREATE TABLE IF NOT EXISTS price_component_observation (
+  price_component_id INTEGER NOT NULL REFERENCES price_component(id) ON DELETE CASCADE,
+  source_snapshot_id INTEGER NOT NULL REFERENCES source_snapshot(id),
+  PRIMARY KEY (price_component_id, source_snapshot_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_price_lookup
   ON price_component (model_id, provider_surface_id, component, valid_from, valid_to);
 

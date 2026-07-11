@@ -88,22 +88,34 @@ def resolve_record(conn: sqlite3.Connection, source_model_record_id: int) -> int
     )
     return None
 
-def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None, dry_run: bool = False) -> dict[str, int | bool]:
+def drain_accepted_queue(
+    conn: sqlite3.Connection,
+    *,
+    limit: int | None = None,
+    queue_ids: list[int] | None = None,
+    dry_run: bool = False,
+) -> dict[str, int | bool]:
     """Materialize accepted review-queue rows into durable model aliases."""
 
     params: list[Any] = []
+    queue_clause = ""
+    if queue_ids is not None:
+        if not queue_ids:
+            return {"processed": 0, "aliases_upserted": 0, "records_updated": 0, "skipped": 0, "dry_run": dry_run}
+        placeholders = ", ".join("?" for _ in queue_ids)
+        queue_clause = f" AND id IN ({placeholders})"
+        params.extend(queue_ids)
     limit_clause = ""
     if limit is not None:
         limit_clause = " LIMIT ?"
         params.append(limit)
-
     rows = conn.execute(
         f"""
         SELECT id, source_record_id, candidate_model_id, features_json
         FROM entity_resolution_queue
         WHERE status = 'accepted'
           AND resolved_at IS NULL
-          AND candidate_model_id IS NOT NULL
+          AND candidate_model_id IS NOT NULL{queue_clause}
         ORDER BY id
         {limit_clause}
         """,
@@ -183,6 +195,31 @@ def drain_accepted_queue(conn: sqlite3.Connection, *, limit: int | None = None, 
         "dry_run": dry_run,
     }
 
+
+def _ensure_no_authoritative_sibling_queue(
+    conn: sqlite3.Connection,
+    *,
+    queue_id: int,
+    source_record_id: int,
+) -> None:
+    sibling = conn.execute(
+        """
+        SELECT id, status, candidate_model_id, resolved_at
+        FROM entity_resolution_queue
+        WHERE source_record_id = ?
+          AND id != ?
+          AND status IN ('accepted', 'resolved')
+        ORDER BY id
+        LIMIT 1
+        """,
+        (source_record_id, queue_id),
+    ).fetchone()
+    if sibling is not None:
+        raise ValueError(
+            "source record already has authoritative queue "
+            f"{sibling[0]} with status {sibling[1]}: {source_record_id}"
+        )
+
 def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model_id: int) -> dict[str, int]:
     """Mark one pending review row accepted with an explicit target model."""
 
@@ -202,6 +239,7 @@ def accept_queue_row(conn: sqlite3.Connection, *, queue_id: int, candidate_model
         raise ValueError(f"queue row not found: {queue_id}")
     if row[2] != "pending" or row[3] is not None or row[4] is not None:
         raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
+    _ensure_no_authoritative_sibling_queue(conn, queue_id=queue_id, source_record_id=int(row[1]))
 
     cursor = conn.execute(
         """
@@ -315,6 +353,7 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
         raise ValueError(f"queue row not found: {queue_id}")
     if row[1] != "pending" or row[2] is not None or row[3] is not None:
         raise ValueError(f"queue row is not pending without a candidate: {queue_id}")
+    _ensure_no_authoritative_sibling_queue(conn, queue_id=queue_id, source_record_id=int(row[0]))
     if row[4] is not None:
         raise ValueError(f"source record is already linked: {row[0]}")
     source_id = str(row[5])
@@ -1340,12 +1379,23 @@ def _first_string(*objects: dict[str, Any], keys: tuple[str, ...]) -> str | None
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "drain-accepted":
-        if len(argv) > 2 or (len(argv) == 2 and argv[1] != "--dry-run"):
-            print("Usage: python -m resolve.resolver drain-accepted [--dry-run]")
-            return 2
-        dry_run = len(argv) == 2
+        args = argv[1:]
+        dry_run = False
+        queue_ids: list[int] = []
+        index = 0
+        while index < len(args):
+            arg = args[index]
+            if arg == "--dry-run":
+                dry_run = True
+                index += 1
+            elif arg == "--queue-id" and index + 1 < len(args):
+                queue_ids.append(int(args[index + 1]))
+                index += 2
+            else:
+                print("Usage: python -m resolve.resolver drain-accepted [--dry-run] [--queue-id QUEUE_ID ...]")
+                return 2
         with connect() as conn:
-            summary = drain_accepted_queue(conn, dry_run=dry_run)
+            summary = drain_accepted_queue(conn, queue_ids=queue_ids or None, dry_run=dry_run)
             if not dry_run:
                 conn.commit()
         print(json.dumps(summary, sort_keys=True))
@@ -1492,7 +1542,7 @@ def main(argv: list[str] | None = None) -> int:
         print("       python -m resolve.resolver accept-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver accept-new-model-batch [--dry-run] FILE.json")
         print("       python -m resolve.resolver accept-organization-batch [--dry-run] FILE.json")
-        print("       python -m resolve.resolver drain-accepted [--dry-run]")
+        print("       python -m resolve.resolver drain-accepted [--dry-run] [--queue-id QUEUE_ID ...]")
         print("       python -m resolve.resolver options QUEUE_ID")
         print("       python -m resolve.resolver queue-export [--format csv|markdown] [--suggested-only] [source_id]")
         print("       python -m resolve.resolver queue-candidates-export [--format csv|markdown] [source_id]")

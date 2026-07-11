@@ -12,6 +12,8 @@ from urllib.request import Request, urlopen
 
 from ingest.base import utcnow
 from store.spine import link_model
+from store.price_intervals import repair_price_intervals
+
 
 SOURCE_ID = "openrouter_endpoints"
 OPENROUTER_SOURCE_ID = "openrouter"
@@ -398,6 +400,8 @@ def promote_openrouter_endpoints(
                     valid_from=valid_from,
                 )
                 summary["prices_inserted"] += 1
+
+    repair_price_intervals(conn)
 
     return summary
 

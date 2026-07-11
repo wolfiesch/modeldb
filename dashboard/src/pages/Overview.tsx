@@ -571,7 +571,7 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-      <div className={`grid grid-cols-2 gap-3 ${deepsweSignal ? 'md:grid-cols-3 xl:grid-cols-6' : 'md:grid-cols-5'}`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${deepsweSignal ? 'md:grid-cols-3 xl:grid-cols-6' : 'md:grid-cols-5'}`}>
         {stats.map((s) => {
           const slug = 'slug' in s ? s.slug : undefined
 
@@ -754,7 +754,7 @@ export default function Overview() {
                       <div className="flex items-center justify-end gap-2">
                         <span>{fmtPercent(row.consensus)}</span>
                         <span
-                          className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${CONFIDENCE_CLASS[rowConfidence]}`}
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${CONFIDENCE_CLASS[rowConfidence]}`}
                           title={`${CONFIDENCE_LABEL[rowConfidence]} confidence · ${fmtCount(
                             row.scoredSignalCount,
                           )} scored signals`}

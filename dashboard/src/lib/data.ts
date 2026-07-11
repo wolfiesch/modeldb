@@ -42,11 +42,14 @@ export interface BenchmarkResult {
   selfReported: number
   measuredAt: string | null
   sourceId?: string | null
+  sourceName?: string | null
+  sourceUrl?: string | null
   sourceSnapshotId?: number | null
   fetchedAt?: string | null
   ci?: number | null
   votes?: number | null
   evalCondition?: Record<string, unknown> | null
+  rawRecord?: unknown | null
 }
 
 export interface Benchmark {
@@ -187,10 +190,150 @@ export interface Alias {
   lastSeen: string
 }
 
+export interface LineageAlias {
+  sourceId: string
+  sourceUrl: string | null
+  alias: string
+  kind: string
+  method: string | null
+  confidence: number
+  firstSeen: string
+  lastSeen: string
+  sourceSnapshotId: number | null
+  fetchedAt: string | null
+}
+
+export interface LineageProviderEndpoint {
+  providerId: string
+  surfaceType: string | null
+  region: string | null
+  endpointModelId: string
+  sourceId: string | null
+  sourceUrl: string | null
+  fetchedAt: string | null
+}
+
+export interface LineageFamilyPeer {
+  modelId: number
+  canonicalSlug: string
+  name: string
+  released: string | null
+  generation: string | null
+}
+
+export interface LineageIdentity {
+  modelId: number
+  canonicalSlug: string
+  name: string
+  developerId: string | null
+  developerName: string | null
+  family: string | null
+  generation: string | null
+  tier: string | null
+  released: string | null
+  aliases: LineageAlias[]
+  sourceTypes: string[]
+  providerEndpoints: LineageProviderEndpoint[]
+  firstSeen: string | null
+  lastSeen: string | null
+  familyPeers: LineageFamilyPeer[]
+}
+
+export type Lineage = Record<string, LineageIdentity>
+
 export interface Meta {
   generatedAt: string
   counts: { models: number; aliases: number; benchmarkResults: number; priceComponents: number }
   snapshots: Array<{ sourceId: string; sourceName: string; url: string; fetchedAt: string }>
+}
+
+export type ChangeCategory =
+  | 'model_added'
+  | 'benchmark_changed'
+  | 'price_validity_changed'
+  | 'alias_first_seen'
+  | 'source_refreshed'
+
+export interface ChangeObservation {
+  kind: 'model' | 'benchmark_result' | 'price' | 'alias' | 'source_refresh'
+  entityId: string
+  observedAt: string
+  sourceId: string | null
+  sourceUrl: string | null
+  snapshotId: number | null
+  selfReported: number | null
+  evalCondition: Record<string, unknown> | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+}
+
+export interface ChangeEvent extends Omit<ChangeObservation, 'kind'> {
+  category: ChangeCategory
+}
+
+export interface ChangesPayload {
+  generatedAt: string
+  events: ChangeEvent[]
+  totalEvents: number
+  categoryTotals: Partial<Record<ChangeCategory, number>>
+  truncated: boolean
+}
+
+function sameChangeValue(
+  left: Record<string, unknown> | null,
+  right: Record<string, unknown> | null,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+export function deriveChanges(observations: ChangeObservation[]): ChangeEvent[] {
+  const ordered = [...observations].sort(
+    (a, b) =>
+      a.entityId.localeCompare(b.entityId) ||
+      a.observedAt.localeCompare(b.observedAt) ||
+      (a.snapshotId ?? -1) - (b.snapshotId ?? -1),
+  )
+  const previousByEntity = new Map<string, ChangeObservation>()
+  const events: ChangeEvent[] = []
+
+  for (const observation of ordered) {
+    const previous = previousByEntity.get(`${observation.kind}:${observation.entityId}`)
+    const category =
+      observation.kind === 'model'
+        ? 'model_added'
+        : observation.kind === 'alias'
+          ? 'alias_first_seen'
+          : observation.kind === 'source_refresh'
+            ? 'source_refreshed'
+            : observation.kind === 'price'
+              ? 'price_validity_changed'
+              : 'benchmark_changed'
+
+    if (
+      observation.kind === 'model' ||
+      observation.kind === 'alias' ||
+      observation.kind === 'source_refresh' ||
+      (previous && !sameChangeValue(previous.after, observation.after))
+    ) {
+      events.push({
+        category,
+        entityId: observation.entityId,
+        observedAt: observation.observedAt,
+        sourceId: observation.sourceId,
+        sourceUrl: observation.sourceUrl,
+        snapshotId: observation.snapshotId,
+        selfReported: observation.selfReported,
+        evalCondition: observation.evalCondition,
+        before: observation.kind === 'benchmark_result' || observation.kind === 'price'
+          ? previous?.after ?? null
+          : observation.before,
+        after: observation.after,
+      })
+    }
+    previousByEntity.set(`${observation.kind}:${observation.entityId}`, observation)
+  }
+
+  return events.sort((a, b) => b.observedAt.localeCompare(a.observedAt) || a.entityId.localeCompare(b.entityId))
 }
 
 const cache = new Map<string, Promise<unknown>>()
@@ -215,10 +358,12 @@ export const loadElo = (series: 'text_overall' | 'text_coding') =>
 export const loadPrices = () => fetchJson<ModelPrices[]>('/data/prices.json')
 export const loadAliases = () => fetchJson<Alias[]>('/data/aliases.json')
 export const loadRunOptions = () => fetchJson<RunOptions[]>('/data/run_options.json')
+export const loadLineage = () => fetchJson<Lineage>('/data/lineage.json')
 export const loadEnrichment = () => fetchJson<Enrichment>('/data/enrichment.json')
 export const loadThroughput = () => fetchJson<ThroughputFile>('/data/throughput.json')
 export const loadBenchmarkTimeseries = () =>
   fetchJson<Record<string, BenchmarkTimeseriesFile>>('/data/benchmark_timeseries.json')
+export const loadChanges = () => fetchJson<ChangesPayload>('/data/changes.json')
 
 export function useData<T>(loader: () => Promise<T>): {
   data: T | null

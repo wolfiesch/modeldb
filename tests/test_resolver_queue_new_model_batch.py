@@ -264,6 +264,7 @@ class AcceptNewModelBatchTests(unittest.TestCase):
             ).fetchone()[0],
             "Kimi K2 Turbo 3.5",
         )
+
     def test_alias_collision_refuses_new_model_without_mutating_review_state(self) -> None:
         source_record_id = self._insert_source_record()
         queue_id = self._insert_queue_row(source_record_id)
@@ -308,6 +309,58 @@ class AcceptNewModelBatchTests(unittest.TestCase):
                 (queue_id,),
             ).fetchone(),
             (None, "pending", None),
+        )
+        self.assertEqual(self._audit_rows(), [])
+
+
+    def test_duplicate_source_record_authority_refuses_new_model_without_mutating_review_state(self) -> None:
+        source_record_id = self._insert_source_record()
+        accepted_queue_id = self.conn.execute(
+            """
+            INSERT INTO entity_resolution_queue
+                (source_record_id, candidate_model_id, reason, features_json, status, created_at, resolved_at)
+            VALUES (?, 1, 'already reviewed duplicate authority', ?, 'accepted', '2026-07-03T08:57:00+00:00', NULL)
+            """,
+            (
+                source_record_id,
+                json.dumps({"provider_scoped_candidates": ["kimi-k2-turbo"]}, sort_keys=True),
+            ),
+        ).lastrowid
+        pending_queue_id = self._insert_queue_row(source_record_id)
+        review = self._new_model_review(pending_queue_id)
+        before = self._state_snapshot()
+
+        with self.assertRaises(ValueError):
+            resolver.accept_new_model_batch(self.conn, [review], dry_run=False)
+
+        self.assertEqual(self._state_snapshot(), before)
+        self.assertEqual(
+            self.conn.execute(
+                """
+                SELECT candidate_model_id, status, resolved_at
+                FROM entity_resolution_queue
+                WHERE id = ?
+                """,
+                (accepted_queue_id,),
+            ).fetchone(),
+            (1, "accepted", None),
+        )
+        self.assertEqual(
+            self.conn.execute(
+                """
+                SELECT candidate_model_id, status, resolved_at
+                FROM entity_resolution_queue
+                WHERE id = ?
+                """,
+                (pending_queue_id,),
+            ).fetchone(),
+            (None, "pending", None),
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT model_alias_id FROM source_model_record WHERE id = ?",
+                (source_record_id,),
+            ).fetchone()[0]
         )
         self.assertEqual(self._audit_rows(), [])
 

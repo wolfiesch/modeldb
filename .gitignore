@@ -14,7 +14,7 @@ __pycache__/
 .venv/
 .python-version
 
-# Secrets — never commit API keys
+# Secrets - never commit API keys
 .env
 *.key
 
@@ -24,6 +24,7 @@ __pycache__/
 # Notebook checkpoints
 .ipynb_checkpoints/
 .perf/
+.agents/
 
 
 # Node deps (declared in package.json + bun.lock)

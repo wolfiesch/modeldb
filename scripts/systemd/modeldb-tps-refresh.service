@@ -5,9 +5,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=wolfie
-Group=wolfie
-Environment=HOME=/home/wolfie
+User=modeldb
+Group=modeldb
+Environment=HOME=/var/lib/modeldb
 Environment=MODELDB_REPO=/srv/modeldb
 Environment=STATIC_DIR=/srv/agent-webhook-hub/static/models
 Environment=OMP_TPS_ALLOW_PAID=1

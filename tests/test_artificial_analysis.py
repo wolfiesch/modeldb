@@ -334,6 +334,48 @@ class ArtificialAnalysisPromotionQueueTests(unittest.TestCase):
             0,
         )
 
+    def test_linked_variant_prices_keep_source_variant_as_tier_condition(self) -> None:
+        from store.artificial_analysis import promote_artificial_analysis
+
+        parsed_fields = {
+            "id": "aa-claude-sonnet-4-high",
+            "model_creator_slug": "anthropic",
+            "model_version": "anthropic/claude-sonnet-4 (high)",
+            "slug": "claude-sonnet-4-high",
+            "name": "Claude Sonnet 4 (high)",
+            "price_1m_input_tokens": 3.0,
+            "price_1m_output_tokens": 15.0,
+        }
+        self.conn.execute(
+            """
+            INSERT INTO source_model_record
+                (id, source_snapshot_id, source_model_id, display_name, provider_name,
+                 raw_record_json, parsed_fields_json)
+            VALUES (?, 1, ?, ?, ?, ?, ?)
+            """,
+            (
+                9,
+                "aa-claude-sonnet-4-high",
+                "Claude Sonnet 4 (high)",
+                "Anthropic",
+                json.dumps({"slug": "claude-sonnet-4-high"}),
+                json.dumps(parsed_fields),
+            ),
+        )
+
+        promote_artificial_analysis(self.conn)
+
+        tier_conditions = {
+            row[0]
+            for row in self.conn.execute(
+                "SELECT tier_condition_json FROM price_component WHERE model_id = 1"
+            )
+        }
+        self.assertEqual(
+            tier_conditions,
+            {'{"model_version": "anthropic/claude-sonnet-4 (high)", "slug": "claude-sonnet-4-high"}'},
+        )
+
 
 
 class ArtificialAnalysisFetchCacheTests(unittest.TestCase):

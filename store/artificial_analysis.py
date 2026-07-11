@@ -7,6 +7,8 @@ from typing import Any
 from ingest.base import utcnow
 from resolve.resolver import enqueue_ambiguous
 from store.spine import _artificial_analysis_candidates, link_model
+from store.price_intervals import repair_price_intervals
+
 
 
 SOURCE_ID = "artificialanalysis"
@@ -143,6 +145,14 @@ def promote_artificial_analysis(conn) -> dict[str, int]:
                 for key in PRICE_FIELDS
                 if key in parsed_fields
             }
+        price_condition = {
+            key: parsed_fields[key]
+            for key in ("model_version", "slug")
+            if parsed_fields.get(key)
+        }
+        if not price_condition:
+            price_condition = {"source_model_id": source_model_id}
+        tier_condition_json = json.dumps(price_condition, sort_keys=True)
         for field, component in PRICE_FIELDS.items():
             amount = _optional_float(pricing.get(field))
             if amount is None:
@@ -154,8 +164,11 @@ def promote_artificial_analysis(conn) -> dict[str, int]:
                 amount=amount,
                 source_snapshot_id=source_snapshot_id,
                 valid_from=valid_from,
+                tier_condition_json=tier_condition_json,
             )
             prices_inserted += 1
+
+    repair_price_intervals(conn)
 
     return {
         "benchmarks": len(benchmark_ids),
@@ -297,6 +310,7 @@ def _insert_price(
     amount: float,
     source_snapshot_id: int,
     valid_from: str,
+    tier_condition_json: str,
 ) -> None:
     conn.execute(
         """
@@ -304,9 +318,9 @@ def _insert_price(
           (model_id, provider_surface_id, source_id, component, unit, currency,
            amount, normalized_usd_per_1m_tokens, tier_condition_json, valid_from,
            valid_to, source_snapshot_id)
-        VALUES (?, NULL, ?, ?, '1m_tokens', 'USD', ?, ?, NULL, ?, NULL, ?)
+        VALUES (?, NULL, ?, ?, '1m_tokens', 'USD', ?, ?, ?, ?, NULL, ?)
         """,
-        (model_id, SOURCE_ID, component, amount, amount, valid_from, source_snapshot_id),
+        (model_id, SOURCE_ID, component, amount, amount, tier_condition_json, valid_from, source_snapshot_id),
     )
 
 

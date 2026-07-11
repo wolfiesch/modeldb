@@ -5,6 +5,8 @@ from typing import Any
 from ingest.base import utcnow
 from store.spine import link_model
 from store.surfaces import surface_identity
+from store.price_intervals import repair_price_intervals
+
 
 
 _PRICE_COLUMNS = (
@@ -242,6 +244,8 @@ def promote_prices(conn) -> dict[str, int]:
         unmatched += source_unmatched
         surface_linked += source_surface_linked
         models_priced.update(source_models_priced)
+
+    repair_price_intervals(conn)
 
     return {
         "inserted": inserted,

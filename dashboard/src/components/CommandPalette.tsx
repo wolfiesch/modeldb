@@ -1,21 +1,11 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { loadModels, useData, type Model } from '../lib/data'
+import { loadModels, useData } from '../lib/data'
+import type { Model } from '../lib/data'
 import { colorForDark } from '../lib/theme'
+import { NAVIGATION } from '../lib/navigation'
 
-const PAGES = [
-  { label: 'Overview', path: '/' },
-  { label: 'Model Explorer', path: '/models' },
-  { label: 'Arena over time', path: '/elo' },
-  { label: 'Leaderboard race', path: '/race' },
-  { label: 'Consensus matrix', path: '/consensus' },
-  { label: 'Speed vs Quality', path: '/efficiency' },
-  { label: 'Benchmarks', path: '/benchmarks' },
-  { label: 'TPS Streams', path: '/tps' },
-  { label: 'Compare', path: '/compare' },
-  { label: 'Timeline', path: '/timeline' },
-  { label: 'Landscape', path: '/landscape' },
-]
 
 type PageResult = {
   type: 'page'
@@ -34,10 +24,10 @@ type Result = PageResult | ModelResult
 
 function searchResults(models: Model[] | null, queryText: string): Result[] {
   const query = queryText.trim().toLowerCase()
-  const pages = PAGES.filter((page) => !query || page.label.toLowerCase().includes(query)).map<Result>((page) => ({
+  const pages = NAVIGATION.filter((page) => !query || page.label.toLowerCase().includes(query)).map<Result>((page) => ({
     type: 'page',
     label: page.label,
-    path: page.path,
+    path: page.to,
   }))
 
   const modelResults = query

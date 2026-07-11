@@ -121,9 +121,9 @@ export const CONFIDENCE_LABEL: Record<ConfidenceTier, string> = {
 }
 
 export const CONFIDENCE_CLASS: Record<ConfidenceTier, string> = {
-  high: 'text-emerald-400 border-emerald-800 bg-emerald-950/60',
-  medium: 'text-amber-400 border-amber-800 bg-amber-950/50',
-  low: 'text-neutral-400 border-neutral-700 bg-neutral-900',
+  high: 'text-emerald-400 border-emerald-500/20 bg-emerald-500/10',
+  medium: 'text-amber-400 border-amber-500/20 bg-amber-500/10',
+  low: 'text-neutral-300 border-neutral-500/30 bg-neutral-500/15',
 }
 
 export type DisagreementTier = 'low' | 'medium' | 'high'

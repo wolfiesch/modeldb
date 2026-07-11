@@ -1,6 +1,13 @@
 import type { Enrichment, Model } from './data'
 
 export type ThroughputSource = 'local_omp' | 'artificialanalysis'
+export type ThroughputOrder = 'fastest' | 'slowest' | 'medianBand'
+
+export interface BuildThroughputRowsOptions {
+  maxRows?: number
+  source?: 'all' | ThroughputSource
+  order?: ThroughputOrder
+}
 
 export interface ThroughputFile {
   generatedAt: string
@@ -58,9 +65,10 @@ export function buildThroughputRows(
   models: Model[],
   enrichment: Enrichment,
   local: ThroughputFile | null,
-  options?: { maxRows?: number; source?: 'all' | 'local_omp' | 'artificialanalysis' },
+  options?: BuildThroughputRowsOptions,
 ): ThroughputRow[] {
   const maxRows = options?.maxRows ?? 40
+  const order = options?.order ?? 'fastest'
   const source = options?.source ?? 'all'
   const rows: ThroughputRow[] = []
   const modelById = new Map(models.map((model) => [model.id, model]))
@@ -118,7 +126,7 @@ export function buildThroughputRows(
     }
   }
 
-  return rows.sort((a, b) => b.tps - a.tps).slice(0, maxRows)
+  return orderRows(rows, order).slice(0, maxRows)
 }
 
 export function coinPlanForThroughput(tps: number): CoinPlan {
@@ -130,6 +138,23 @@ export function coinPlanForThroughput(tps: number): CoinPlan {
     fallSpeed,
     coinsPerSecond: safeTps * 0.6 * (fallSpeed / 9.5),
   }
+}
+
+function orderRows(rows: ThroughputRow[], order: ThroughputOrder): ThroughputRow[] {
+  if (order === 'slowest') return [...rows].sort((a, b) => a.tps - b.tps)
+  if (order === 'medianBand') {
+    const median = medianTps(rows)
+    return [...rows].sort((a, b) => Math.abs(a.tps - median) - Math.abs(b.tps - median) || a.tps - b.tps)
+  }
+
+  return [...rows].sort((a, b) => b.tps - a.tps)
+}
+
+function medianTps(rows: ThroughputRow[]): number {
+  if (rows.length === 0) return 0
+  const sorted = rows.map((row) => row.tps).sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
 function isValidTps(value: unknown): value is number {

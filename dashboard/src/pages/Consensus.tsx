@@ -152,7 +152,7 @@ export default function Consensus() {
                 </td>
                 <td className="px-3 py-3 text-center">
                   <span
-                    className={`rounded border px-1.5 py-0.5 text-[10px] ${CONFIDENCE_CLASS[confidenceTier(row.benchmarkCount)]}`}
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${CONFIDENCE_CLASS[confidenceTier(row.benchmarkCount)]}`}
                     title={CONFIDENCE_LABEL[confidenceTier(row.benchmarkCount)]}
                   >
                     {row.benchmarkCount}

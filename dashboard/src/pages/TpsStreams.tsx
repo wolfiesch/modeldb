@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import ThroughputCoinCanvas from '../components/ThroughputCoinCanvas'
 import { loadEnrichment, loadModels, loadThroughput, useData } from '../lib/data'
-import { buildThroughputRows, type ThroughputRow } from '../lib/throughput'
+import { buildThroughputRows, type ThroughputOrder, type ThroughputRow } from '../lib/throughput'
 import { colorForDark } from '../lib/theme'
 
 type SourceFilter = 'all' | 'local_omp' | 'artificialanalysis'
@@ -13,6 +13,12 @@ const FILTERS: Array<{ label: string; value: SourceFilter }> = [
   { label: 'Artificial Analysis', value: 'artificialanalysis' },
 ]
 
+const ORDER_FILTERS: Array<{ label: string; value: ThroughputOrder; description: string }> = [
+  { label: 'Fastest', value: 'fastest', description: 'highest output TPS first' },
+  { label: 'Median band', value: 'medianBand', description: 'representative rows near the median TPS first' },
+  { label: 'Slowest', value: 'slowest', description: 'lowest positive TPS first' },
+]
+
 const sourceLabel: Record<ThroughputRow['source'], string> = {
   local_omp: 'Local OMP',
   artificialanalysis: 'Artificial Analysis',
@@ -21,15 +27,17 @@ const sourceLabel: Record<ThroughputRow['source'], string> = {
 export default function TpsStreams() {
   const [searchParams, setSearchParams] = useSearchParams()
   const sourceParam = searchParams.get('source')
+  const orderParam = searchParams.get('order')
   const lanesParam = searchParams.get('lanes')
   const lanesParamConsumedRef = useRef(searchParams.has('lanes'))
   const userToggledLanesRef = useRef(false)
   const { data: models, loading: modelsLoading, error: modelsError } = useData(loadModels)
   const { data: enrichment, loading: enrichmentLoading, error: enrichmentError } = useData(loadEnrichment)
   const { data: throughput, error: throughputError } = useData(loadThroughput)
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() =>
-    sourceParam === 'local_omp' || sourceParam === 'artificialanalysis' ? sourceParam : 'all',
-  )
+  const sourceFilter: SourceFilter =
+    sourceParam === 'local_omp' || sourceParam === 'artificialanalysis' ? sourceParam : 'all'
+  const throughputOrder: ThroughputOrder =
+    orderParam === 'slowest' || orderParam === 'medianBand' ? orderParam : 'fastest'
   const [selectedKeys, setSelectedKeys] = useState<string[]>(() =>
     lanesParam ? lanesParam.split(',').filter(Boolean) : [],
   )
@@ -44,7 +52,7 @@ export default function TpsStreams() {
 
     for (const filter of FILTERS) {
       counts[filter.value] = buildThroughputRows(models, enrichment, throughputMissing ? null : (throughput ?? null), {
-        maxRows: 40,
+        maxRows: Number.MAX_SAFE_INTEGER,
         source: filter.value,
       }).length
     }
@@ -57,8 +65,9 @@ export default function TpsStreams() {
     return buildThroughputRows(models, enrichment, throughputMissing ? null : (throughput ?? null), {
       maxRows: 40,
       source: sourceFilter,
+      order: throughputOrder,
     })
-  }, [enrichment, models, sourceFilter, throughput, throughputMissing])
+  }, [enrichment, models, sourceFilter, throughput, throughputMissing, throughputOrder])
 
   useEffect(() => {
     if (lanesParamConsumedRef.current || userToggledLanesRef.current) return
@@ -78,6 +87,12 @@ export default function TpsStreams() {
       nextParams.set('source', sourceFilter)
     }
 
+    if (throughputOrder === 'fastest') {
+      nextParams.delete('order')
+    } else {
+      nextParams.set('order', throughputOrder)
+    }
+
     if (selectedKeys.length > 0 && !selectedKeysMatchDefault) {
       nextParams.set('lanes', selectedKeys.join(','))
     } else {
@@ -87,11 +102,18 @@ export default function TpsStreams() {
     if (nextParams.toString() !== searchParams.toString()) {
       setSearchParams(nextParams, { replace: true })
     }
-  }, [rows, searchParams, selectedKeys, setSearchParams, sourceFilter])
+  }, [rows, searchParams, selectedKeys, setSearchParams, sourceFilter, throughputOrder])
 
   const selectedRows = rows.filter((row) => selectedKeys.includes(row.key))
   const loading = modelsLoading || enrichmentLoading
   const error = modelsError ?? enrichmentError
+  const orderLabel = ORDER_FILTERS.find((filter) => filter.value === throughputOrder)?.label ?? 'Fastest'
+  const sourceDescription =
+    sourceFilter === 'local_omp'
+      ? 'local OMP benchmark runs'
+      : sourceFilter === 'artificialanalysis'
+        ? 'Artificial Analysis median output TPS'
+        : 'local OMP runs plus Artificial Analysis median output TPS'
 
   if (loading) return <div className="text-neutral-500">Loading throughput streams…</div>
   if (error) return <div className="text-red-400">{error}</div>
@@ -106,26 +128,47 @@ export default function TpsStreams() {
             <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.42em] text-amber-300/70">
               Prototype lab
             </div>
-            <h1 className="text-4xl font-semibold tracking-tight text-amber-50">TPS coin streams</h1>
+            <h1 className="text-4xl font-semibold tracking-tight text-amber-50">Output TPS streams</h1>
             <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-              Gold coin rain scaled by visible output tokens per second.
+              Coin rain scaled by output tokens per second. Showing {orderLabel.toLowerCase()} rows only, not a full
+              distribution.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {FILTERS.map((filter) => (
-              <button
-                key={filter.value}
-                className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
-                  sourceFilter === filter.value
-                    ? 'border-amber-300 bg-amber-300 text-black shadow-lg shadow-amber-500/20'
-                    : 'border-amber-300/20 bg-black/30 text-amber-200/70 hover:border-amber-300/50 hover:text-amber-100'
-                }`}
-                type="button"
-                onClick={() => setSourceFilter(filter.value)}
-              >
-                {filter.label} · {filterCounts[filter.value]}
-              </button>
-            ))}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              {FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                    sourceFilter === filter.value
+                      ? 'border-amber-300 bg-amber-300 text-black shadow-lg shadow-amber-500/20'
+                      : 'border-amber-300/20 bg-black/30 text-amber-200/70 hover:border-amber-300/50 hover:text-amber-100'
+                  }`}
+                  type="button"
+                  onClick={() => resetRows(filter.value, throughputOrder, sourceFilter, throughputOrder, searchParams, setSearchParams, setSelectedKeys, lanesParamConsumedRef, userToggledLanesRef)}
+                >
+                  {filter.label} · {filterCounts[filter.value]}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {ORDER_FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] transition ${
+                    throughputOrder === filter.value
+                      ? 'border-neutral-100 bg-neutral-100 text-black'
+                      : 'border-neutral-700 bg-black/30 text-neutral-300 hover:border-neutral-400 hover:text-neutral-100'
+                  }`}
+                  aria-label={filter.label}
+                  title={filter.description}
+                  type="button"
+                  onClick={() => resetRows(sourceFilter, filter.value, sourceFilter, throughputOrder, searchParams, setSearchParams, setSelectedKeys, lanesParamConsumedRef, userToggledLanesRef)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -135,6 +178,11 @@ export default function TpsStreams() {
           Local throughput warning: {throughputWarning}
         </div>
       ) : null}
+
+      <div className="rounded-2xl border border-amber-400/20 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+        Source: {sourceDescription}. Showing {rows.length} {orderLabel.toLowerCase()} positive-TPS rows from{' '}
+        {filterCounts[sourceFilter]} available rows. Zero and missing TPS values are excluded.
+      </div>
 
       {rows.length === 0 ? (
         <div className="rounded-[2rem] border border-neutral-800 bg-neutral-900/60 p-8 text-sm text-neutral-400">
@@ -202,14 +250,44 @@ export default function TpsStreams() {
               className="rounded-2xl border border-neutral-800 bg-neutral-900/70 px-4 py-3 text-xs text-neutral-500"
               title="Coin count = clamp(round(TPS × 1.2), 24, 360). Falling speed uses sqrt(TPS)."
             >
-              Each lane rains coins at a rate proportional to the model's output speed — denser rain means more tokens per
-              second. Gray lane = 100 TPS reference.
+              Each lane rains coins at a rate proportional to the selected model's output speed - denser rain means more
+              tokens per second. Gray lane = 100 TPS reference.
             </div>
           </div>
         </section>
       )}
     </div>
   )
+}
+
+function resetRows(
+  nextSourceFilter: SourceFilter,
+  nextThroughputOrder: ThroughputOrder,
+  currentSourceFilter: SourceFilter,
+  currentThroughputOrder: ThroughputOrder,
+  searchParams: URLSearchParams,
+  setSearchParams: (nextParams: URLSearchParams, options?: { replace?: boolean }) => void,
+  setSelectedKeys: (keys: string[]) => void,
+  lanesParamConsumedRef: { current: boolean },
+  userToggledLanesRef: { current: boolean },
+) {
+  if (nextSourceFilter === currentSourceFilter && nextThroughputOrder === currentThroughputOrder) return
+  lanesParamConsumedRef.current = false
+  userToggledLanesRef.current = false
+  setSelectedKeys([])
+  const nextParams = new URLSearchParams(searchParams)
+  if (nextSourceFilter === 'all') {
+    nextParams.delete('source')
+  } else {
+    nextParams.set('source', nextSourceFilter)
+  }
+  if (nextThroughputOrder === 'fastest') {
+    nextParams.delete('order')
+  } else {
+    nextParams.set('order', nextThroughputOrder)
+  }
+  nextParams.delete('lanes')
+  setSearchParams(nextParams, { replace: true })
 }
 
 function toggleKey(key: string, setSelectedKeys: (updater: (keys: string[]) => string[]) => void) {
