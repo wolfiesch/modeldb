@@ -1,0 +1,208 @@
+import { useMemo, useState } from 'react'
+import LabLogo from '../components/LabLogo'
+import { useModelDrawer } from '../components/ModelDrawer'
+import { loadElo, loadMeta, loadModels, useData } from '../lib/data'
+import { labLabel, labSearchValues } from '../lib/labs'
+import { colorForDark } from '../lib/theme'
+import { buildTimelineRows, formatTimelineDate } from '../lib/timelineRows'
+
+const loadOverallElo = () => loadElo('text_overall')
+const MIN_SCALE_SPAN_MS = 24 * 60 * 60 * 1000
+
+function percent(ms: number, min: number, span: number): number {
+  return ((ms - min) / span) * 100
+}
+
+export default function Timeline() {
+  const { data: models, loading, error } = useData(loadModels)
+  const { data: elo, loading: eloLoading, error: eloError } = useData(loadOverallElo)
+  const { data: meta, loading: metaLoading, error: metaError } = useData(loadMeta)
+  const { openModel } = useModelDrawer()
+  const [devFilter, setDevFilter] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+
+
+  const allRows = useMemo(() => {
+    if (!models || !elo || !meta) return []
+    return buildTimelineRows(models, elo.series, Date.parse(meta.generatedAt))
+  }, [models, elo, meta])
+
+  const devs = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const row of allRows) {
+      if (row.model.dev) counts.set(row.model.dev, (counts.get(row.model.dev) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([dev]) => dev)
+  }, [allRows])
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return allRows.filter((row) => {
+      if (devFilter && row.model.dev !== devFilter) return false
+      if (!q) return true
+      const labValues = labSearchValues(row.model.dev, row.model.devName)
+      return [
+        row.model.name,
+        row.model.slug,
+        row.model.dev,
+        row.model.devName,
+        row.model.family,
+        ...labValues,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    })
+  }, [allRows, devFilter, query])
+
+  const visible = filteredRows
+
+  const scale = useMemo(() => {
+    const rows = filteredRows.length > 0 ? filteredRows : allRows
+    const min = Math.min(...rows.map((row) => row.releaseMs))
+    const max = Math.max(...rows.map((row) => row.displayEndMs))
+    const span = Math.max(max - min, MIN_SCALE_SPAN_MS)
+    return { min, max, span }
+  }, [allRows, filteredRows])
+
+  if (loading || eloLoading || metaLoading) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center space-y-4">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-800 border-t-neutral-400" />
+        <span className="text-xs text-neutral-500">Loading timeline...</span>
+      </div>
+    )
+  }
+  if (error || eloError || metaError) return <div className="text-red-400">{error ?? eloError ?? metaError}</div>
+  if (!models || !elo || !meta) return null
+
+  const asOfLabel = formatTimelineDate(Date.parse(meta.generatedAt))
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h1 className="mr-4 text-base font-semibold text-neutral-100">Model lifespan timeline</h1>
+          {devs.map((dev) => (
+            <button
+              key={dev}
+              onClick={() => {
+                setDevFilter((cur) => (cur === dev ? null : dev))
+              }}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                devFilter === dev
+                  ? 'border-neutral-300 bg-neutral-800 text-white'
+                  : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
+              }`}
+              style={{ borderColor: devFilter === dev ? colorForDark(dev) : undefined }}
+            >
+              <LabLogo dev={dev} size={16} showLabel labelClassName="truncate" />
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+            }}
+            placeholder="Search model, developer, or family…"
+            className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 outline-none focus:border-neutral-500 sm:w-96"
+          />
+          <div className="text-xs text-neutral-500">
+            {filteredRows.length} of {allRows.length} released models
+          </div>
+          <div className="flex items-center gap-2 text-xs text-neutral-500">
+            <span className="inline-block h-2 w-8 rounded-full bg-neutral-400 opacity-35" />
+            active as of {asOfLabel}
+            <span className="inline-block h-2 w-8 rounded-full bg-neutral-400 opacity-90" />
+            observed in LMArena
+          </div>
+        </div>
+      </div>
+
+      {filteredRows.length === 0 ? (
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 py-16 text-center text-neutral-500">
+          No models match.
+        </div>
+      ) : (
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+          <div className="mb-4 grid grid-cols-[minmax(11rem,15rem)_1fr] gap-4 text-xs text-neutral-500">
+            <div>Model</div>
+            <div className="flex justify-between">
+              <span>{formatTimelineDate(scale.min)}</span>
+              <span>{formatTimelineDate(scale.max)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            {visible.map((row) => {
+              const left = percent(row.releaseMs, scale.min, scale.span)
+              const observedWidth =
+                row.observedEndMs == null ? 0 : Math.max(percent(row.observedEndMs, scale.min, scale.span) - left, 0)
+              const displayWidth = Math.max(percent(row.displayEndMs, scale.min, scale.span) - left, 0)
+              const statusLabel = row.active ? 'current' : row.retired ? 'retired' : 'unknown'
+              const title = [
+                row.model.name,
+                `Released: ${row.released}`,
+                `Observed through: ${row.observedThrough ?? 'no LMArena point yet'}`,
+                `Shown through: ${row.shownThrough}`,
+                `Status: ${statusLabel}`,
+              ].join('\n')
+              return (
+                <button
+                  key={row.model.id}
+                  type="button"
+                  title={title}
+                  onClick={() => openModel(row.model.slug)}
+                  className="grid w-full grid-cols-[minmax(11rem,15rem)_1fr] items-center gap-4 rounded-md px-2 py-1 text-left hover:bg-neutral-800/60"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-neutral-100">{row.model.name}</div>
+                    <div className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">
+                      <LabLogo
+                        dev={row.model.dev}
+                        devName={row.model.devName}
+                        size={16}
+                        showLabel
+                        title={labLabel(row.model.dev, row.model.devName)}
+                        className="min-w-0 gap-1.5"
+                        labelClassName="truncate"
+                      />
+                      <span className="shrink-0">· {row.released}</span>
+                    </div>
+                  </div>
+                  <div className="relative h-8 overflow-hidden rounded-md border border-neutral-800 bg-neutral-950">
+                    <div className="absolute inset-y-0 left-0 border-l border-neutral-800/70" />
+                    <div className="absolute inset-y-0 right-0 border-r border-neutral-800/70" />
+                    <div
+                      className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[9999px] opacity-35 shadow-[0_0_18px_rgba(255,255,255,0.08)]"
+                      style={{
+                        left: `${left}%`,
+                        width: `${displayWidth}%`,
+                        minWidth: 6,
+                        backgroundColor: colorForDark(row.model.dev),
+                      }}
+                    />
+                    {row.observedEndMs == null ? null : (
+                      <div
+                        className="absolute top-1/2 h-4 -translate-y-1/2 rounded-[9999px] shadow-[0_0_18px_rgba(255,255,255,0.08)]"
+                        style={{
+                          left: `${left}%`,
+                          width: `${observedWidth}%`,
+                          minWidth: 6,
+                          backgroundColor: colorForDark(row.model.dev),
+                          opacity: row.retired ? 0.5 : 0.9,
+                        }}
+                      />
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+        </div>
+      )}
+    </div>
+  )
+}

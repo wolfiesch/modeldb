@@ -1,0 +1,5 @@
+# Runtime deps for the modeldb pipeline + viz. Parsers otherwise use stdlib only.
+# uv users: deps are declared in pyproject.toml; this file is the pip fallback.
+pandas>=2.2
+pyarrow>=16.0
+matplotlib>=3.8

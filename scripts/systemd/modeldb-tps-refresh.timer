@@ -1,0 +1,11 @@
+[Unit]
+Description=Run modeldb TPS refresh daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 America/Los_Angeles
+RandomizedDelaySec=45m
+Persistent=true
+Unit=modeldb-tps-refresh.service
+
+[Install]
+WantedBy=timers.target

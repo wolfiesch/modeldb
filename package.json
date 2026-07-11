@@ -1,0 +1,16 @@
+{
+  "name": "ai-data-viz",
+  "private": true,
+  "scripts": {
+    "dash:extract": "bun dashboard/scripts/extract.mjs",
+    "dash:dev": "bun run --cwd dashboard dev",
+    "dash:build": "bun dashboard/scripts/extract.mjs && bun run --cwd dashboard build"
+  },
+  "type": "module",
+  "dependencies": {
+    "@observablehq/plot": "0.6.17",
+    "d3": "^7.9.0",
+    "echarts": "^6.1.0",
+    "jsdom": "29.1.1"
+  }
+}

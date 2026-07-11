@@ -1,0 +1,44 @@
+[
+  {
+    "key": "gpt-55",
+    "label": "GPT 5.5",
+    "canonicalSlug": "openai/gpt-5.5",
+    "ompSelector": "cursor/gpt-5.5-medium-fast",
+    "providerLabel": "Cursor"
+  },
+  {
+    "key": "gemini-31-pro",
+    "label": "Gemini 3.1 Pro Preview",
+    "canonicalSlug": "google/gemini-3.1-pro-preview",
+    "ompSelector": "google-antigravity/gemini-3.1-pro:low",
+    "providerLabel": "Google Antigravity"
+  },
+  {
+    "key": "opus-48",
+    "label": "Claude Opus 4.8",
+    "canonicalSlug": "anthropic/claude-opus-4-8",
+    "ompSelector": "cursor/claude-opus-4-8-high",
+    "providerLabel": "Cursor"
+  },
+  {
+    "key": "gemini-35-flash",
+    "label": "Gemini 3.5 Flash",
+    "canonicalSlug": "google/gemini-3.5-flash",
+    "ompSelector": "google-antigravity/gemini-3.5-flash:medium",
+    "providerLabel": "Google Antigravity"
+  },
+  {
+    "key": "kimi-k27-code",
+    "label": "Kimi K2.7 Code",
+    "canonicalSlug": "moonshotai/kimi-k2.7-code",
+    "ompSelector": "cursor/kimi-k2.7-code",
+    "providerLabel": "Cursor"
+  },
+  {
+    "key": "glm-52",
+    "label": "GLM 5.2",
+    "canonicalSlug": "zai/glm-5.2",
+    "ompSelector": "zai/glm-5.2:medium",
+    "providerLabel": "Z.ai"
+  }
+]

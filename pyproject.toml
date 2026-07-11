@@ -1,0 +1,22 @@
+[project]
+name = "modeldb"
+version = "0.1.0"
+description = "Personal LLM model-intelligence aggregator: ingest, resolve, correlate, visualize."
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",     # parquet frames (LMArena, Epoch), viz data prep
+    "pyarrow>=16.0",   # read HF parquet datasets (LMArena leaderboard)
+    "matplotlib>=3.8", # frontier / ELO-over-time charts
+]
+
+# Parsers use only stdlib (urllib, json, csv, zipfile) + the above.
+# Provider/AA enrichers (M2+) read API keys from env; see docs/SOURCES.md:
+#   ARTIFICIALANALYSIS_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY,
+#   GEMINI_API_KEY, MISTRAL_API_KEY.
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
