@@ -81,6 +81,122 @@ class SpineDedupCollisionTests(unittest.TestCase):
             with self.subTest(provider_id=provider_id):
                 self.assertFalse(spine.is_first_party_provider(provider_id))
 
+    def test_first_party_regional_namespace_mints_under_developer_slug(self) -> None:
+        # models.dev lists a release under `alibaba-cn` days before `alibaba`. Both
+        # must resolve to one canonical row spelled with the developer prefix.
+        for namespace, expected in (
+            ("alibaba-cn", "alibaba"),
+            ("alibaba-token-plan", "alibaba"),
+            ("tencent-tokenhub", "tencent"),
+            ("longcat", "meituan"),
+        ):
+            with self.subTest(namespace=namespace):
+                self.assertTrue(spine.is_first_party_provider(namespace))
+                self.assertEqual(
+                    spine.canonical_slug_for(f"{namespace}/some-model"),
+                    f"{expected}/some-model",
+                )
+
+    def test_canonical_slug_is_unchanged_for_plain_first_party_namespaces(self) -> None:
+        for source_model_id in ("alibaba/qwen3-max", "anthropic/claude-opus-5", "longcat"):
+            with self.subTest(source_model_id=source_model_id):
+                self.assertEqual(spine.canonical_slug_for(source_model_id), source_model_id)
+
+    def test_learn_vendor_tokens_maps_ids_to_their_own_developer(self) -> None:
+        tokens = spine.learn_vendor_tokens(
+            [
+                "deepseek/deepseek-v4-flash",
+                "moonshotai/kimi-k2.5",
+                "zhipuai/glm-5.2",
+                "alibaba/qwen3-max",
+                "alibaba-cn/qwen3.7-flash",  # mixed catalog teaches nothing
+                "nvidia/deepseek-ai/DeepSeek-V4",  # re-exporter teaches nothing
+            ]
+        )
+        self.assertEqual(tokens.get("deepseek"), {"deepseek"})
+        self.assertEqual(tokens.get("kimi"), {"moonshotai"})
+        self.assertEqual(tokens.get("glm"), {"zhipuai"})
+        self.assertEqual(tokens.get("qwen"), {"alibaba"})
+
+    def test_mixed_catalog_mints_own_models_and_aliases_resold_ones(self) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO source (id, name, ingestion_class, auth_type)
+            VALUES ('models_dev', 'models.dev', 'A', 'none')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO source_snapshot (
+                id, source_id, url, fetched_at, content_hash, parser_version
+            )
+            VALUES (
+                1, 'models_dev', 'https://models.dev/api.json',
+                '2026-08-01T00:00:00Z', 'mixed-catalog-test', 'test'
+            )
+            """
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO source_model_record (
+                source_snapshot_id, source_model_id, raw_record_json, parsed_fields_json
+            )
+            VALUES (1, ?, '{}', '{}')
+            """,
+            [
+                ("deepseek/deepseek-v4-flash",),
+                ("moonshotai/kimi-k2.5",),
+                ("alibaba/qwen3-max",),
+                # Alibaba's own release, listed in the China catalog first.
+                ("alibaba-cn/qwen3.7-flash",),
+                # Resold third-party listings in the same catalog.
+                ("alibaba-cn/deepseek-v4-flash",),
+                ("alibaba-cn/kimi-k2.5",),
+                ("alibaba-cn/moonshot-kimi-k2-instruct",),
+                ("alibaba-cn/siliconflow/deepseek-v4-flash",),
+                # Single-vendor product namespace mints unconditionally.
+                ("longcat/LongCat-2.0",),
+            ],
+        )
+
+        spine.build_spine(self.conn)
+
+        slugs = [
+            row[0]
+            for row in self.conn.execute("SELECT canonical_slug FROM model ORDER BY canonical_slug")
+        ]
+        self.assertEqual(
+            slugs,
+            [
+                "alibaba/qwen3-max",
+                "alibaba/qwen3.7-flash",
+                "deepseek/deepseek-v4-flash",
+                "meituan/LongCat-2.0",
+                "moonshotai/kimi-k2.5",
+            ],
+        )
+
+        deepseek_id = self.conn.execute(
+            "SELECT id FROM model WHERE canonical_slug = 'deepseek/deepseek-v4-flash'"
+        ).fetchone()[0]
+        moonshot_id = self.conn.execute(
+            "SELECT id FROM model WHERE canonical_slug = 'moonshotai/kimi-k2.5'"
+        ).fetchone()[0]
+        for alias_string, expected_model_id in (
+            ("alibaba-cn/deepseek-v4-flash", deepseek_id),
+            ("alibaba-cn/kimi-k2.5", moonshot_id),
+            ("alibaba-cn/siliconflow/deepseek-v4-flash", deepseek_id),
+        ):
+            with self.subTest(alias_string=alias_string):
+                self.assertEqual(
+                    self.conn.execute(
+                        "SELECT alias_kind, model_id FROM model_alias "
+                        "WHERE source_id='models_dev' AND alias_string=?",
+                        (alias_string,),
+                    ).fetchone(),
+                    ("reexport_id", expected_model_id),
+                )
+
     def test_models_dev_reexport_provider_attaches_alias_without_minting_canonical(self) -> None:
         self.conn.execute(
             """

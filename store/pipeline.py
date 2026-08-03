@@ -7,9 +7,10 @@ Usage:
 Ordering matters:
   1. ingest source parsers (models_dev, openrouter, epoch) -> source_model_record
   2. build_spine            -> canonical `model` rows + models.dev aliases
-  3. bridge_openrouter      -> OpenRouter + HF aliases onto the spine
-  4. promote_prices         -> price_component (needs spine aliases for link_model)
-  5. promote_benchmarks     -> benchmark + benchmark_result (needs spine aliases)
+  3. launch_registry        -> curated launch-window rows no catalog lists yet
+  4. bridge_openrouter      -> OpenRouter + HF aliases onto the spine
+  5. promote_prices         -> price_component (needs spine aliases for link_model)
+  6. promote_benchmarks     -> benchmark + benchmark_result (needs spine aliases)
 """
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ from store.vllm import promote_vllm
 from store.deepswe import promote_deepswe
 from store.arena import promote_arena
 from store.capabilities import promote_capabilities
-from store.announcement import capture_announcement, SONNET5_EVIDENCE
+from store.launch_registry import promote_launch_registry
 
 M1_SOURCES = (
     "models_dev",
@@ -71,7 +72,7 @@ def run_pipeline(
             summary["ingest"] = ingest_results
 
         summary["spine"] = build_spine(conn)
-        summary["announcement"] = capture_announcement(conn, SONNET5_EVIDENCE)
+        summary["launch_registry"] = promote_launch_registry(conn)
         summary["bridge"] = bridge_openrouter_aliases(conn)
         summary["surfaces"] = promote_surfaces(conn)
         summary["artifacts"] = promote_artifacts(conn)

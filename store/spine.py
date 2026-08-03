@@ -18,7 +18,7 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ingest.base import utcnow
 from resolve.normalize import canonical_org, extract_modifiers, normalize_alias
@@ -32,18 +32,109 @@ FIRST_PARTY_PROVIDERS = {
     "deepseek", "alibaba", "zhipuai", "zai", "moonshotai", "minimax",
     "cohere", "perplexity", "stepfun", "upstage", "xiaomi",
     "sarvam", "baidu", "tencent", "poolside", "sakana", "nova",
-    "thinkingmachines",
+    "thinkingmachines", "meituan",
 }
 
 # models.dev also lists re-export namespaces that mirror other developers'
 # models. They are useful source facts, but they must not mint canonical rows.
 REEXPORT_ONLY_PROVIDERS = {"nvidia", "inceptron"}
 
+# Some first-party developers ship through regional and subscription catalogs
+# (`alibaba-cn`, `alibaba-token-plan`, `tencent-tokenhub`) instead of, or weeks
+# before, their plain namespace. Those catalogs are the developer's own surface,
+# but they also resell other vendors' models, so they mint canonical identity
+# only for ids that belong to the developer itself (see `_mints_in_namespace`).
+# Minting `alibaba-cn/qwen3.7-flash` verbatim would also create a second
+# canonical row once `alibaba/qwen3.7-flash` appears, so the slug always carries
+# the developer prefix.
+MIXED_FIRST_PARTY_NAMESPACES = {
+    "alibaba-cn": "alibaba",
+    "alibaba-coding-plan": "alibaba",
+    "alibaba-coding-plan-cn": "alibaba",
+    "alibaba-token-plan": "alibaba",
+    "alibaba-token-plan-cn": "alibaba",
+    "tencent-coding-plan": "tencent",
+    "tencent-token-plan": "tencent",
+    "tencent-tokenhub": "tencent",
+}
+
+# Single-vendor product namespaces: the whole namespace is one developer's own
+# catalog (`longcat` is Meituan's API), so every id in it mints.
+PRODUCT_NAMESPACES = {"longcat": "meituan"}
+
+_VERSION_SUFFIX_RE = re.compile(r"[\d.]+$")
+
+
+def first_party_provider_id(provider_id: str) -> str:
+    """Map a models.dev namespace onto the developer provider id that owns it."""
+    if provider_id in MIXED_FIRST_PARTY_NAMESPACES:
+        return MIXED_FIRST_PARTY_NAMESPACES[provider_id]
+    return PRODUCT_NAMESPACES.get(provider_id, provider_id)
+
+
+def canonical_slug_for(source_model_id: str) -> str:
+    """Canonical slug for a first-party models.dev id, namespace-normalized."""
+    provider_id, _, model_part = source_model_id.partition("/")
+    developer_provider = first_party_provider_id(provider_id)
+    if not model_part or developer_provider == provider_id:
+        return source_model_id
+    return f"{developer_provider}/{model_part}"
+
 
 def is_first_party_provider(provider_id: str) -> bool:
     """Return whether a models.dev provider id can mint canonical model rows."""
-    provider = canonical_org(provider_id)
+    provider = canonical_org(first_party_provider_id(provider_id))
     return provider in FIRST_PARTY_PROVIDERS and provider not in REEXPORT_ONLY_PROVIDERS
+
+
+def _vendor_token(segment: str) -> str:
+    """Identity token of a model-id segment: `qwen3.7` -> `qwen`, `2.0` -> ``."""
+    return _VERSION_SUFFIX_RE.sub("", segment.split("-", 1)[0].lower())
+
+
+def learn_vendor_tokens(source_model_ids: Iterable[str]) -> dict[str, set[str]]:
+    """Map model-id tokens to the developers that ship them under their own name.
+
+    Learned from the catalog itself rather than a hand-kept vendor list: every
+    plain first-party namespace (`deepseek/deepseek-v4-flash`,
+    `moonshotai/kimi-k2.5`, `zhipuai/glm-5`) teaches that `deepseek`, `kimi` and
+    `glm` name those developers' models. A mixed catalog that lists the same
+    token is reselling, not releasing.
+    """
+    tokens: dict[str, set[str]] = {}
+    for source_model_id in source_model_ids:
+        provider_id, _, bare = source_model_id.partition("/")
+        if not bare or "/" in bare:
+            continue
+        if provider_id in MIXED_FIRST_PARTY_NAMESPACES or provider_id in PRODUCT_NAMESPACES:
+            continue
+        if not is_first_party_provider(provider_id):
+            continue
+        token = _vendor_token(bare)
+        if token:
+            tokens.setdefault(token, set()).add(canonical_org(provider_id))
+    return tokens
+
+
+def _mints_in_namespace(
+    provider_id: str, bare_id: str, developer_id: str, vendor_tokens: dict[str, set[str]]
+) -> bool:
+    """Whether a mixed-catalog id is the catalog owner's own model.
+
+    `alibaba-cn` lists Alibaba's `qwen3.7-flash` next to resold
+    `deepseek-v4-flash`, `kimi-k2.5` and `siliconflow/deepseek-v3.2`. Only the
+    first may mint an `alibaba/...` canonical row.
+    """
+    if provider_id not in MIXED_FIRST_PARTY_NAMESPACES:
+        return True
+    if "/" in bare_id:
+        # Nested path (`siliconflow/deepseek-v3.2`) is always a resold listing.
+        return False
+    for segment in bare_id.split("-", 2)[:2]:
+        owners = vendor_tokens.get(_vendor_token(segment))
+        if owners and developer_id not in owners:
+            return False
+    return True
 
 
 def find_alias_collisions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -425,9 +516,11 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
         """
     ).fetchall()
 
+    vendor_tokens = learn_vendor_tokens(row[0] for row in rows)
     models_created = 0
     aliases_created = 0
     variant_specs: list[tuple[str, str]] = []
+    resold_specs: list[str] = []
     for source_model_id, display_name, parsed_json in rows:
         provider_id = source_model_id.split("/", 1)[0]
         if not is_first_party_provider(provider_id):
@@ -435,12 +528,24 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
         if ":" in source_model_id:
             # `<id>:peft:262144`-style suffixes are serving variants, not distinct
             # releases. Attach them as aliases once every base row exists.
-            variant_specs.append((source_model_id, source_model_id.split(":", 1)[0]))
+            variant_specs.append(
+                (source_model_id, canonical_slug_for(source_model_id.split(":", 1)[0]))
+            )
+            continue
+
+        bare_id = source_model_id.partition("/")[2]
+        if bare_id and not _mints_in_namespace(
+            provider_id, bare_id, canonical_org(first_party_provider_id(provider_id)),
+            vendor_tokens,
+        ):
+            # A mixed catalog reselling another vendor: keep it as an alias fact.
+            resold_specs.append(source_model_id)
             continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
 
-        canonical_slug = source_model_id  # already provider/model; authoritative
-        developer_id = canonical_org(provider_id)
+        developer_provider = first_party_provider_id(provider_id)
+        canonical_slug = canonical_slug_for(source_model_id)
+        developer_id = canonical_org(developer_provider)
         release_date = pf.get("release_date")
         snapshot_date = release_date  # models.dev release_date is the dated snapshot
 
@@ -449,7 +554,7 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
         if existing:
             model_id = existing[0]
         else:
-            _ensure_org(conn, developer_id, provider_id)
+            _ensure_org(conn, developer_id, developer_provider)
             cur = conn.execute(
                 """
                 INSERT INTO model (canonical_slug, developer_id, family, tier_or_variant,
@@ -489,10 +594,13 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
             model_id=base[0], method="variant_suffix_of_canonical", confidence=0.9, now=now,
         )
 
+    resold = set(resold_specs)
     reexport_aliases_created = 0
     for source_model_id, _display_name, parsed_json in rows:
         provider_id = source_model_id.split("/", 1)[0]
-        if provider_id not in REEXPORT_ONLY_PROVIDERS or "/" not in source_model_id:
+        if "/" not in source_model_id:
+            continue
+        if provider_id not in REEXPORT_ONLY_PROVIDERS and source_model_id not in resold:
             continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
         target_model_id = source_model_id.split("/", 1)[1]
