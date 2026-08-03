@@ -17,7 +17,11 @@ if [[ -f db/modeldb.sqlite ]]; then
 fi
 
 python3 -m store.pipeline
-OMP_TPS_ALLOW_PAID=${OMP_TPS_ALLOW_PAID:-0} python3 scripts/collect_omp_tps.py --config scripts/omp_tps_models.json --runs "${OMP_TPS_RUNS:-3}" --timeout "${OMP_TPS_TIMEOUT:-120}"
+# TPS collection is paid enrichment, not a publish gate: a dead selector or an
+# exhausted provider balance must never freeze the live dashboard data.
+if ! OMP_TPS_ALLOW_PAID=${OMP_TPS_ALLOW_PAID:-0} python3 scripts/collect_omp_tps.py --config scripts/omp_tps_models.json --runs "${OMP_TPS_RUNS:-3}" --timeout "${OMP_TPS_TIMEOUT:-120}"; then
+  echo "warning: OMP TPS collection failed; publishing with the previously stored TPS samples" >&2
+fi
 python3 -m store.quality_gates --db db/modeldb.sqlite "${quality_baseline_args[@]}" --report-file "$QUALITY_REPORT_PATH"
 bun dashboard/scripts/extract.mjs
 rsync -av --delete dashboard/public/data/ "$STATIC_DIR/data/"
