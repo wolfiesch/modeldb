@@ -146,6 +146,113 @@ class SpineDedupCollisionTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(reexport_alias, ("reexport_id", canonical_rows[0][0]))
 
+    def test_first_party_variant_suffix_attaches_alias_without_minting_canonical(self) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO source (id, name, ingestion_class, auth_type)
+            VALUES ('models_dev', 'models.dev', 'A', 'none')
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO source_snapshot (
+                id,
+                source_id,
+                url,
+                fetched_at,
+                content_hash,
+                parser_version
+            )
+            VALUES (
+                1,
+                'models_dev',
+                'https://models.dev/api.json',
+                '2026-01-01T00:00:00Z',
+                'dedup-variant-suffix-test',
+                'test'
+            )
+            """
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO source_model_record (
+                source_snapshot_id,
+                source_model_id,
+                raw_record_json,
+                parsed_fields_json
+            )
+            VALUES (1, ?, '{}', '{}')
+            """,
+            [
+                ("thinkingmachines/thinkingmachines/Inkling:peft:262144",),
+                ("thinkingmachines/thinkingmachines/Inkling",),
+            ],
+        )
+
+        summary = spine.build_spine(self.conn)
+
+        self.assertEqual(summary["models_created"], 1)
+        canonical_rows = self.conn.execute(
+            "SELECT id, canonical_slug FROM model ORDER BY canonical_slug"
+        ).fetchall()
+        self.assertEqual(canonical_rows, [(1, "thinkingmachines/thinkingmachines/Inkling")])
+        variant_alias = self.conn.execute(
+            """
+            SELECT alias_kind, model_id
+            FROM model_alias
+            WHERE alias_string = 'thinkingmachines/thinkingmachines/Inkling:peft:262144'
+            """
+        ).fetchone()
+        self.assertEqual(variant_alias, ("variant_id", canonical_rows[0][0]))
+
+    def test_superseded_snapshot_spelling_does_not_mint_a_second_canonical_row(self) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO source (id, name, ingestion_class, auth_type)
+            VALUES ('models_dev', 'models.dev', 'A', 'none')
+            """
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO source_snapshot (
+                id,
+                source_id,
+                url,
+                fetched_at,
+                content_hash,
+                parser_version
+            )
+            VALUES (?, 'models_dev', 'https://models.dev/api.json', ?, ?, 'test')
+            """,
+            [
+                (1, '2026-07-17T00:00:00Z', 'dedup-rename-old'),
+                (2, '2026-07-25T00:00:00Z', 'dedup-rename-new'),
+            ],
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO source_model_record (
+                source_snapshot_id,
+                source_model_id,
+                raw_record_json,
+                parsed_fields_json
+            )
+            VALUES (?, ?, '{}', '{}')
+            """,
+            [
+                (1, "thinkingmachines/inkling"),
+                (2, "thinkingmachines/thinkingmachines/Inkling"),
+            ],
+        )
+
+        summary = spine.build_spine(self.conn)
+
+        self.assertEqual(summary["models_created"], 1)
+        self.assertEqual(
+            self.conn.execute("SELECT canonical_slug FROM model").fetchall(),
+            [("thinkingmachines/thinkingmachines/Inkling",)],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

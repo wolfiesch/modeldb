@@ -32,6 +32,7 @@ FIRST_PARTY_PROVIDERS = {
     "deepseek", "alibaba", "zhipuai", "zai", "moonshotai", "minimax",
     "cohere", "perplexity", "stepfun", "upstage", "xiaomi",
     "sarvam", "baidu", "tencent", "poolside", "sakana", "nova",
+    "thinkingmachines",
 }
 
 # models.dev also lists re-export namespaces that mirror other developers'
@@ -406,6 +407,11 @@ def _aa_identity_variants(identity: str) -> list[str]:
 def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
     """Create canonical `model` rows + aliases from models.dev first-party records.
 
+    Only the newest models.dev snapshot mints identity: the catalog renames ids
+    (`thinkingmachines/inkling` -> `thinkingmachines/thinkingmachines/Inkling`),
+    and replaying every historical snapshot would mint one canonical row per
+    spelling. Rows minted by earlier runs are never removed here.
+
     Idempotent on canonical_slug and (source_id, alias_string). Returns a summary.
     """
     now = utcnow()
@@ -413,16 +419,23 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
         """
         SELECT smr.source_model_id, smr.display_name, smr.parsed_fields_json
         FROM source_model_record smr
-        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
-        WHERE ss.source_id = 'models_dev'
+        WHERE smr.source_snapshot_id = (
+            SELECT MAX(id) FROM source_snapshot WHERE source_id = 'models_dev'
+        )
         """
     ).fetchall()
 
     models_created = 0
     aliases_created = 0
+    variant_specs: list[tuple[str, str]] = []
     for source_model_id, display_name, parsed_json in rows:
         provider_id = source_model_id.split("/", 1)[0]
         if not is_first_party_provider(provider_id):
+            continue
+        if ":" in source_model_id:
+            # `<id>:peft:262144`-style suffixes are serving variants, not distinct
+            # releases. Attach them as aliases once every base row exists.
+            variant_specs.append((source_model_id, source_model_id.split(":", 1)[0]))
             continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
 
@@ -465,6 +478,16 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
                 alias_normalized=normalize_alias(alias_str), alias_kind=kind,
                 model_id=model_id, method="exact_provider_doc", confidence=1.0, now=now,
             )
+
+    for alias_str, base_slug in variant_specs:
+        base = conn.execute("SELECT id FROM model WHERE canonical_slug = ?", (base_slug,)).fetchone()
+        if base is None:
+            continue
+        aliases_created += _write_alias(
+            conn, source_id="models_dev", alias_string=alias_str,
+            alias_normalized=normalize_alias(alias_str), alias_kind="variant_id",
+            model_id=base[0], method="variant_suffix_of_canonical", confidence=0.9, now=now,
+        )
 
     reexport_aliases_created = 0
     for source_model_id, _display_name, parsed_json in rows:
