@@ -31,20 +31,20 @@ BENCHMARK_CATALOG = {
         "math",
         "index",
     ),
-    "mmlu_pro": ("Artificial Analysis MMLU-Pro", "knowledge", "score"),
+    "mmlu_pro": ("MMLU-Pro", "knowledge", "score"),
     "gpqa": ("Artificial Analysis GPQA", "reasoning", "score"),
-    "hle": ("Artificial Analysis Humanity's Last Exam", "reasoning", "score"),
+    "hle": ("Humanity's Last Exam", "reasoning", "score"),
     "livecodebench": ("Artificial Analysis LiveCodeBench", "coding", "score"),
     "aime": ("Artificial Analysis AIME", "math", "score"),
     "aime_25": ("Artificial Analysis AIME 2025", "math", "score"),
     "math_500": ("Artificial Analysis MATH-500", "math", "score"),
-    "ifbench": ("Artificial Analysis IFBench", "instruction_following", "score"),
-    "lcr": ("Artificial Analysis LCR", "coding", "score"),
-    "scicode": ("Artificial Analysis SciCode", "coding", "score"),
+    "ifbench": ("IFBench", "instruction_following", "score"),
+    "lcr": ("AA-LCR", "long_context", "score"),
+    "scicode": ("SciCode", "coding", "score"),
     "tau2": ("Artificial Analysis Tau2", "agentic", "score"),
     "tau_banking": ("Artificial Analysis Tau Banking", "agentic", "score"),
     "terminalbench_hard": ("Artificial Analysis Terminal-Bench Hard", "agentic", "score"),
-    "terminalbench_v2_1": ("Artificial Analysis Terminal-Bench v2.1", "agentic", "score"),
+    "terminalbench_v2_1": ("Terminal-Bench 2.1", "agentic", "score"),
 }
 
 CAPABILITY_FIELDS = {
@@ -242,9 +242,13 @@ def _upsert_benchmark_catalog(conn, benchmark_ids: set[str]) -> None:
         name, category, metric_default = BENCHMARK_CATALOG[benchmark_id]
         conn.execute(
             """
-            INSERT OR IGNORE INTO benchmark
+            INSERT INTO benchmark
               (id, name, category, metric_default, higher_is_better, source_url)
             VALUES (?, ?, ?, ?, 1, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              category = excluded.category,
+              metric_default = excluded.metric_default
             """,
             (benchmark_id, name, category, metric_default, SOURCE_URL),
         )

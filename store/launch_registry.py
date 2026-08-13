@@ -235,12 +235,13 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
         "parameter_scale": "2.4t",
         "training_role": "reasoning",
         "release_date": "2026-08-03",
-        "open_weights": False,
+        "open_weights": True,
         "confidence": "probable",
         "aliases": (
             ("qwen3.8-max", "bare_name"),
             ("alibaba/qwen3.8-max", "api_model_id"),
             ("Qwen3.8-Max", "display_name"),
+            ("Qwen/Qwen3.8-2.4T-A95B", "hf_repo_id"),
         ),
         "evidence": {
             "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
@@ -255,8 +256,11 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
                        "131,072 max output tokens.",
             "modalities": "text, image, video, and document input; text output.",
             "reasoning": "always-on reasoning with low/high/xhigh levels, default xhigh.",
-            "open_weights_status": "Alibaba states weights will be released; not "
-                                   "published at capture time, so open_weights stays 0.",
+            "open_weights_status": "Open weights released 2026-08-12 as "
+                                   "Qwen/Qwen3.8-2.4T-A95B on HuggingFace (FP8). "
+                                   "Text-only: no vision, 262K native context "
+                                   "(extensible to ~1M). The hosted Qwen3.8-Max API "
+                                   "retains vision, 1M context, and built-in tools.",
             "confidence_note": "release_date is the general-availability date; Alibaba "
                                "had not published a dated first-party launch post at "
                                "capture time, hence canonical_confidence=probable.",
@@ -495,6 +499,244 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
                            "Think; flagship instruct checkpoint is "
                            "Instella-MoE-16B-A3B-Think, HF repos created 2026-07-23.",
             "code_url": "https://github.com/AMD-AGI/Instella-MoE",
+        },
+    },
+    {
+        "canonical_slug": "deepseek/deepseek-v4-pro-0813",
+        "display_name": "DeepSeek V4 Pro 0813",
+        "developer_id": "deepseek",
+        "family": "deepseek-v4",
+        "generation": "4",
+        "tier_or_variant": "pro",
+        "parameter_scale": "1.6t-a49b",
+        "training_role": "reasoning",
+        "release_date": "2026-08-12",
+        "snapshot_date": "2026-08-12",
+        "stability": "pinned",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("deepseek/deepseek-v4-pro-0813", "api_model_id"),
+            ("deepseek-v4-pro-0813", "bare_name"),
+            ("DeepSeek-V4-Pro-0813", "display_name"),
+            ("deepseek-ai/DeepSeek-V4-Pro", "hf_repo_id"),
+            ("~deepseek/deepseek-v4-pro-latest", "latest_alias"),
+        ),
+        "evidence": {
+            "source_url": "https://api-docs.deepseek.com/updates/",
+            "release_date": "2026-08-12",
+            "status": "official GA build of DeepSeek-V4-Pro, replacing the April preview. "
+                      "No separate announcement; the flagship silently swapped to the "
+                      "0813 build on the API and in DeepSeek Chat.",
+            "architecture": "1.6T total parameters, 49B active (MoE); same architecture "
+                            "as the April preview. Gains come from re-post-training, not "
+                            "a larger network.",
+            "context": {"input_tokens": 1_048_576, "max_output_tokens": 384_000},
+            "modes": "thinking and non-thinking modes; deepseek-chat and deepseek-reasoner "
+                     "map to non-thinking and thinking respectively.",
+            "pricing_per_1m": {"input": 0.435, "input_cache_hit": 0.003625,
+                               "output": 0.87},
+            "weights": "MIT-licensed weights at deepseek-ai/DeepSeek-V4-Pro; the 0813 "
+                       "build shares the same HF repo as the preview (no 0813-suffixed "
+                       "repo at capture time).",
+            "performance": "DeepSeek reports a 15.8% uplift since the April preview; "
+                           "approaches Claude Fable 5 on several agentic benchmarks "
+                           "(Terminal Bench 2.1, CyberGym, DeepSWE, AutomationBench). "
+                           "Self-reported, NOT captured as benchmark_result rows.",
+            "openrouter_url": "https://openrouter.ai/deepseek/deepseek-v4-pro-0813",
+        },
+    },
+    {
+        "canonical_slug": "xai/grok-4.6",
+        "display_name": "Grok 4.6",
+        "developer_id": "xai",
+        "family": "grok",
+        "generation": "4.6",
+        "training_role": "reasoning",
+        "release_date": "2026-08-12",
+        "knowledge_cutoff": "2026-02-01",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("grok-4.6", "api_model_id"),
+            ("grok-4.6", "bare_name"),
+            ("x-ai/grok-4.6", "router_id"),
+            ("xai/grok-4.6", "api_model_id"),
+            ("Grok 4.6", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://x.ai/news/grok-4-6",
+            "release_date": "2026-08-12",
+            "positioning": "extends Grok 4.5 with focus on long-running agents and "
+                           "ambitious interactive/visual tasks; coding, research, "
+                           "multi-step projects.",
+            "context": {"input_tokens": 500_000},
+            "modalities": "text and image input; text output.",
+            "reasoning_levels": "low, medium, high, xhigh (default: high).",
+            "pricing_per_1m": {"input": 2.0, "input_cache_hit": 0.50,
+                               "output": 6.0},
+            "long_context_pricing_per_1m": {"threshold_tokens": 200_000,
+                                            "input": 4.0, "input_cache_hit": 1.0,
+                                            "output": 12.0},
+            "fast_variant": "available at double the price for lower latency.",
+            "availability": "Cursor, Grok Build, xAI API, OpenRouter, Vercel, Cloudflare.",
+            "vendor_claims": "Artificial Analysis Intelligence Index score of 61, tied "
+                             "with GPT-5.6 Sol Max and behind Fable 5 Max (62). Grok 4.5 "
+                             "scored 56. Self-reported, NOT captured as "
+                             "benchmark_result rows.",
+            "docs_url": "https://docs.x.ai/developers/models",
+        },
+    },
+    {
+        "canonical_slug": "meta/muse-spark-1.2",
+        "display_name": "Muse Spark 1.2",
+        "developer_id": "meta",
+        "family": "muse",
+        "generation": "1.2",
+        "tier_or_variant": "spark",
+        "training_role": "reasoning",
+        "release_date": "2026-08-05",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("muse-spark-1.2", "api_model_id"),
+            ("muse-spark-1.2", "bare_name"),
+            ("meta/muse-spark-1.2", "router_id"),
+            ("Muse Spark 1.2", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2",
+            "release_date": "2026-08-05",
+            "positioning": "coding-focused update to Muse Spark 1.1; improved code "
+                           "generation, debugging, codebase understanding, and "
+                           "end-to-end developer workflows. Shipped alongside Muse Code, "
+                           "a terminal coding agent in beta.",
+            "context": {"input_tokens": 1_048_576},
+            "modalities": "text, image, video, PDF, and audio input; text output.",
+            "pricing_per_1m_standard": {"input": 1.25, "input_cache_hit": 0.15,
+                                        "output": 4.25},
+            "pricing_per_1m_contributor": {"input": 0.10, "input_cache_hit": 0.002,
+                                           "output": 0.20,
+                                           "note": "prompts/completions may be used to "
+                                                   "train future Meta models."},
+            "availability": "Muse Code (beta) and Meta Model API (api.meta.ai/v1); "
+                            "OpenAI SDK compatible.",
+            "open_weights_status": "Meta states weights will be open-sourced in the "
+                                   "coming weeks; not published at capture time, so "
+                                   "open_weights stays 0.",
+            "docs_url": "https://developer.meta.com/ai/models/muse-spark/",
+        },
+    },
+    {
+        "canonical_slug": "meta/muse-glimmer-30b",
+        "display_name": "Muse Glimmer 30B",
+        "developer_id": "meta",
+        "family": "muse-glimmer",
+        "parameter_scale": "30b",
+        "training_role": "instruct",
+        "release_date": "2026-08-10",
+        "knowledge_cutoff": "2026-01-04",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("meta-models/Muse-Glimmer-30B", "hf_repo_id"),
+            ("Muse-Glimmer-30B", "bare_name"),
+            ("Muse Glimmer 30B", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://research.meta.ai/blog/introducing-muse-glimmer-open-agentic-model",
+            "release_date": "2026-08-10",
+            "class": "open-weight agentic model optimized for local, on-device use on "
+                     "consumer hardware (24-32 GB VRAM).",
+            "architecture": "dense causal Transformer with a frozen ViT-G/14 perception "
+                            "encoder (~1.8B params); 29.6B total parameters; hidden 6656; "
+                            "52 layers; GQA with 32 query / 2 KV heads; sliding window "
+                            "attention (2048) with local/global pattern.",
+            "context": {"input_tokens": 131_072},
+            "modalities": "text and image input; text output.",
+            "quantization": "4-bit weight quantization reduces footprint to under 20 GB; "
+                            "includes DFlash drafter for speculative decoding.",
+            "training": "pre-trained on Muse Spark outputs with logit distillation; "
+                        "mid-trained with longer contexts and richer agentic data; "
+                        "post-trained with SFT, on-policy distillation, and RL across "
+                        "general, reasoning, coding, and agentic domains.",
+            "license": "apache-2.0",
+            "ecosystem": "llama.cpp, MLX, ExecuTorch, vLLM, SGLang; local deployment via "
+                         "Ollama, LM Studio, Unsloth; serving via Together AI, Fireworks "
+                         "AI, OpenRouter.",
+            "hf_url": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        },
+    },
+    {
+        "canonical_slug": "openai/gpt-5.6-cyber",
+        "display_name": "GPT-5.6 Cyber",
+        "developer_id": "openai",
+        "family": "gpt",
+        "generation": "5.6",
+        "tier_or_variant": "cyber",
+        "training_role": "reasoning",
+        "release_date": "2026-08-10",
+        "stability": "preview",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gpt-5.6-cyber", "api_model_id"),
+            ("gpt-5.6-cyber", "bare_name"),
+            ("GPT-5.6 Cyber", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://openai.com/index/expanding-daybreak-as-the-cyber-defense-window-narrows/",
+            "release_date": "2026-08-10",
+            "class": "cybersecurity-focused fine-tune of GPT-5.6 Sol for authorized "
+                     "vulnerability research, exploit validation, and security testing.",
+            "access": "Daybreak Red program only; restricted to approved individuals and "
+                      "organizations with identity verification. Not generally available. "
+                      "Starting 2026-09-01, Daybreak accounts must use hardware security "
+                      "keys.",
+            "context": {"input_tokens": 400_000, "max_output_tokens": 128_000},
+            "modalities": "text and image input; text output.",
+            "pricing_per_1m": {"input": 12.50, "input_cache_hit": 1.25,
+                               "output": 75.00},
+            "preparedness_rating": "High (not Critical) on OpenAI's Preparedness "
+                                   "Framework cybersecurity capability.",
+            "performance": "completed 95% of advanced cybersecurity requests vs 2% for "
+                           "GPT-5.6 Sol in internal testing; identified two previously "
+                           "unknown flaws in Google's V8 engine. Self-reported, NOT "
+                           "captured as benchmark_result rows.",
+            "docs_url": "https://developers.openai.com/api/docs/models/gpt-5.6-cyber",
+        },
+    },
+    {
+        "canonical_slug": "nvidia/nemotron-3.5-lightning",
+        "display_name": "Nemotron 3.5 Lightning",
+        "developer_id": "nvidia",
+        "family": "nemotron",
+        "generation": "3.5",
+        "tier_or_variant": "lightning",
+        "parameter_scale": "30b-a3b",
+        "training_role": "instruct",
+        "release_date": "2026-08-11",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("nvidia/nemotron-3.5-lightning", "api_model_id"),
+            ("nemotron-3.5-lightning", "bare_name"),
+            ("Nemotron 3.5 Lightning", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://developer.nvidia.com/blog/nvidia-nemotron-3-5-lightning-delivers-fast-accurate-specialized-task-execution-for-long-running-agents/",
+            "release_date": "2026-08-11",
+            "class": "open 30B MoE model (3B active) optimized for fast, low-latency "
+                     "execution in always-on agent workflows.",
+            "architecture": "30B total parameters with 3B active per token; supports "
+                            "NVFP4 and BF16 checkpoints; speculative decoding and "
+                            "DFlash/DSpark for inference optimization.",
+            "deployment": "NVIDIA NeMo Switchyard coordinates intelligent model routing; "
+                          "compatible with DGX, Blackwell/Hopper/Ampere GPUs; integrations "
+                          "with OpenRouter, OpenClaw, and Hermes Agent.",
+            "license": "OpenMDW-1.1",
+            "weights": "weights, data, and recipes released on Hugging Face and "
+                       "ModelScope.",
         },
     },
 )

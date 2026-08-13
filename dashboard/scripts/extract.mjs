@@ -211,13 +211,18 @@ for (const r of q(
   capAny.set(`${r.model_id}:${r.capability}`, r.value)
 }
 
-// Latest score per (model, benchmark).
+// Headline score per (model, benchmark). Independent measurements outrank
+// provider-reported ones even when the launch post is newer; recency only
+// breaks ties within one provenance class. See viz/README.md.
 const latestScores = new Map() // modelId -> { benchId: {...} }
 for (const r of q(
   `SELECT model_id, benchmark_id, score, rank, self_reported, measured_at
    FROM (
      SELECT model_id, benchmark_id, score, rank, self_reported, measured_at,
-       ROW_NUMBER() OVER (PARTITION BY model_id, benchmark_id ORDER BY measured_at DESC) AS rn
+       ROW_NUMBER() OVER (
+         PARTITION BY model_id, benchmark_id
+         ORDER BY self_reported ASC, measured_at DESC
+       ) AS rn
      FROM benchmark_result WHERE score IS NOT NULL
    ) WHERE rn = 1`
 )) {
@@ -589,12 +594,14 @@ const timeseriesBenchmarks = [
 const timeseriesData = {}
 
 for (const benchId of timeseriesBenchmarks) {
+  // Independent measurements only: a launch-day self-report is one vendor
+  // claim, not a point on an independently tracked trend line.
   const rows = q(
     `SELECT br.model_id AS modelId, br.score, br.rank, br.measured_at AS measuredAt,
             ss.fetched_at AS fetchedAt, br.source_snapshot_id AS sourceSnapshotId
      FROM benchmark_result br
      LEFT JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
-     WHERE br.benchmark_id = ? AND br.score IS NOT NULL
+     WHERE br.benchmark_id = ? AND br.score IS NOT NULL AND br.self_reported = 0
      ORDER BY br.model_id, br.measured_at`,
     [benchId]
   )
