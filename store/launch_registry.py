@@ -739,6 +739,252 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
                        "ModelScope.",
         },
     },
+    {
+        "canonical_slug": "zhipuai/glm-5.3",
+        "display_name": "GLM-5.3",
+        "developer_id": "zhipuai",
+        "family": "glm",
+        "generation": "5.3",
+        "training_role": "chat",
+        "release_date": "2026-08-14",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("glm-5.3", "bare_name"),
+            ("zhipuai/glm-5.3", "api_model_id"),
+            ("zai/glm-5.3", "api_model_id"),
+            ("GLM-5.3", "display_name"),
+            ("zhipuai-coding-plan/glm-5.3", "api_model_id"),
+            ("zai-coding-plan/glm-5.3", "api_model_id"),
+            ("opencode-go/glm-5.3", "router_id"),
+        ),
+        "evidence": {
+            "source_url": "https://z.ai/blog/glm-5.3",
+            "release_date": "2026-08-14",
+            "positioning": "Zhipu AI (Z.ai) extreme scaling post-training on GLM-5.2 base architecture; "
+                           "+50% on Z.ai Code Bench, emergent vulnerability discovery on CyberGym.",
+            "context_window": 131072,
+            "weights": "open weights scheduled ~2 weeks post-launch following safety hardening.",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.7-flash",
+        "display_name": "Gemini 3.7 Flash",
+        "developer_id": "google",
+        "family": "gemini-flash",
+        "generation": "3.7",
+        "tier_or_variant": "flash",
+        "training_role": "reasoning",
+        "release_date": "2026-08-13",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.7-flash", "bare_name"),
+            ("google/gemini-3.7-flash", "api_model_id"),
+            ("gemini-3.7-flash-latest", "latest_alias"),
+            ("models/gemini-3.7-flash", "api_model_id"),
+            ("Gemini 3.7 Flash", "display_name"),
+            ("google/gemini-3.7-flash-preview", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/",
+            "release_date": "2026-08-13",
+            "positioning": "workhorse reasoning model optimized for coding, agentic workflows, "
+                           "and complex knowledge tasks; 1M token context window, 64k max output.",
+            "pricing_intro": {"input_per_1m": 0.75, "output_per_1m": 3.75,
+                              "through": "2026-12-31"},
+            "pricing_standard": {"input_per_1m": 1.50, "output_per_1m": 7.50},
+            "context_window": 1000000,
+            "max_output": 64000,
+            "system_card_url": "https://deepmind.google/models/model-cards/gemini-3-7-flash/",
+        },
+    },
+    {
+        "canonical_slug": "microsoft/mai-thinking-1",
+        "display_name": "MAI-Thinking-1",
+        "developer_id": "microsoft",
+        "family": "mai",
+        "generation": "1",
+        "tier_or_variant": "thinking",
+        "parameter_scale": "1t",
+        "training_role": "reasoning",
+        "release_date": "2026-08-12",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("mai-thinking-1", "bare_name"),
+            ("microsoft/mai-thinking-1", "api_model_id"),
+            ("MAI-Thinking-1", "display_name"),
+            ("MAI-Thinking-1-preview", "api_model_id"),
+            ("microsoft/mai-thinking-1-preview", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://microsoft.ai/news/introducing-mai-thinking-1/",
+            "release_date": "2026-08-12",
+            "positioning": "Microsoft's first in-house reasoning model; sparse MoE architecture with "
+                           "~1T total / 35B active parameters, 256K context window.",
+            "context_window": 262144,
+            "system_card_url": "https://microsoft.ai/pdf/mai-thinking-1.pdf",
+        },
+    },
+    {
+        "canonical_slug": "bytedance/seed-2.1-turbo",
+        "display_name": "Seed 2.1 Turbo",
+        "developer_id": "bytedance",
+        "family": "seed",
+        "generation": "2.1",
+        "tier_or_variant": "turbo",
+        "training_role": "chat",
+        "release_date": "2026-08-12",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("seed-2.1-turbo", "bare_name"),
+            ("bytedance/seed-2.1-turbo", "api_model_id"),
+            ("bytedance-seed/seed-2.1-turbo", "router_id"),
+            ("Seed-2.1-Turbo", "display_name"),
+            ("doubao-seed-2.1-turbo", "bare_name"),
+            ("bytedance/doubao-seed-2.1-turbo", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://openrouter.ai/bytedance-seed/seed-2.1-turbo",
+            "release_date": "2026-08-12",
+            "positioning": "ByteDance multimodal model (text/image/video) for agentic and delivery workflows "
+                           "with 262k context window.",
+            "pricing_standard": {"input_per_1m": 0.44, "output_per_1m": 2.21},
+            "context_window": 262144,
+        },
+    },
+    {
+        "canonical_slug": "mistral/shieldstral-1.0",
+        "display_name": "Shieldstral 1.0",
+        "developer_id": "mistral",
+        "family": "shieldstral",
+        "generation": "1.0",
+        "parameter_scale": "3b",
+        "training_role": "moderation",
+        "release_date": "2026-08-04",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("shieldstral-1.0", "bare_name"),
+            ("mistralai/Shieldstral-1.0", "hf_repo_id"),
+            ("mistral/shieldstral-1.0", "api_model_id"),
+            ("Shieldstral 1.0", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://mistral.ai/news/shieldstral/",
+            "release_date": "2026-08-04",
+            "positioning": "3B open-weights multimodal safety classifier and policy-adaptive content moderation "
+                           "model under Apache 2.0.",
+            "context_window": 32768,
+            "license": "Apache-2.0",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.5-transcribe",
+        "display_name": "Gemini 3.5 Transcribe",
+        "developer_id": "google",
+        "family": "gemini",
+        "generation": "3.5",
+        "tier_or_variant": "transcribe",
+        "training_role": "speech-to-text",
+        "release_date": "2026-08-26",
+        "stability": "stable",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.5-transcribe", "api_model_id"),
+            ("gemini-3.5-transcribe", "bare_name"),
+            ("models/gemini-3.5-transcribe", "api_model_id"),
+            ("Gemini 3.5 Transcribe", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe",
+            "release_date": "2026-08-26",
+            "availability": "generally available through the Gemini API.",
+            "positioning": "low-latency speech-to-text model with utterance-based language "
+                           "detection across 85+ languages, speaker diarization, word-level "
+                           "timestamps, Smart transcription, and custom vocabulary biasing.",
+            "modalities": "audio input; text and word-annotation output.",
+            "limits": {
+                "max_audio_minutes": 60,
+                "max_audio_minutes_with_diarization_or_word_timestamps": 30,
+                "max_diarized_speakers": 8,
+                "max_custom_vocabulary_terms": 1000,
+            },
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.5-transcribe-live",
+        "display_name": "Gemini 3.5 Transcribe Live",
+        "developer_id": "google",
+        "family": "gemini",
+        "generation": "3.5",
+        "tier_or_variant": "transcribe-live",
+        "training_role": "speech-to-text",
+        "release_date": "2026-08-26",
+        "stability": "stable",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.5-transcribe-live", "api_model_id"),
+            ("gemini-3.5-transcribe-live", "bare_name"),
+            ("models/gemini-3.5-transcribe-live", "api_model_id"),
+            ("Gemini 3.5 Transcribe Live", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe",
+            "release_date": "2026-08-26",
+            "availability": "generally available through the Gemini Live API over WebSockets.",
+            "positioning": "low-latency bidirectional streaming speech-to-text with interim "
+                           "and finalized transcription events, language detection across "
+                           "85+ languages, Smart transcription, and custom vocabulary biasing.",
+            "modalities": "streaming audio input; streaming text output.",
+            "limits": {
+                "max_session_minutes": 10,
+                "max_custom_vocabulary_terms": 1000,
+                "speaker_diarization": False,
+                "word_level_timestamps": False,
+            },
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-omni-1.1-flash",
+        "display_name": "Gemini Omni 1.1 Flash",
+        "developer_id": "google",
+        "family": "gemini-omni",
+        "generation": "1.1",
+        "tier_or_variant": "flash",
+        "training_role": "video-generation",
+        "release_date": "2026-08-27",
+        "stability": "stable",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-omni-1.1-flash", "api_model_id"),
+            ("gemini-omni-1.1-flash", "bare_name"),
+            ("models/gemini-omni-1.1-flash", "api_model_id"),
+            ("Gemini Omni 1.1 Flash", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://ai.google.dev/gemini-api/docs/changelog",
+            "model_card_url": "https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash",
+            "release_date": "2026-08-27",
+            "availability": "generally available through the Gemini API.",
+            "positioning": "fast conversational video generation and editing with video "
+                           "extension, first/last-frame interpolation, and resolution control.",
+            "modalities": "text, image, and video input; video output.",
+            "context_window": 1_048_576,
+            "video": {
+                "duration_seconds": "3-10",
+                "fps": 24,
+                "resolutions": ("360p", "720p", "1080p", "4k"),
+            },
+            "supersedes": "gemini-omni-flash-preview",
+            "preview_deprecation_date": "2026-09-30",
+        },
+    },
 )
 
 _MODEL_COLUMNS = (
@@ -772,8 +1018,10 @@ def _model_values(entry: dict[str, Any]) -> tuple[Any, ...]:
 def _mint(conn: sqlite3.Connection, entry: dict[str, Any], now: str) -> tuple[int, bool]:
     """Return (model_id, created). Idempotent on canonical_slug."""
     slug = entry["canonical_slug"]
-    row = conn.execute("SELECT id FROM model WHERE canonical_slug = ?", (slug,)).fetchone()
+    row = conn.execute("SELECT id, display_name FROM model WHERE canonical_slug = ?", (slug,)).fetchone()
     if row:
+        if row[1] is None and entry.get("display_name"):
+            conn.execute("UPDATE model SET display_name = ? WHERE id = ?", (entry["display_name"], row[0]))
         return int(row[0]), False
 
     _ensure_org(conn, entry["developer_id"], entry["developer_id"])

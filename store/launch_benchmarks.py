@@ -121,6 +121,13 @@ BENCHMARK_CATALOG: dict[str, tuple[str, str | None, str, int, str | None]] = {
     "advanced_cybersecurity_completion_rate": (
         "Advanced Cybersecurity Completion Rate", "security", "percent", 1,
         "https://openai.com/index/expanding-daybreak-as-the-cyber-defense-window-narrows/"),
+    # --- Google Gemini 3.7 Flash ---
+    "webdev_arena_elo": ("WebDev Arena", "coding", "elo", 1,
+                         "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/"),
+    "gdp_pdf": ("GDP.pdf", "reasoning", "percent", 1,
+                "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/"),
+    # --- Microsoft MAI-Thinking-1 ---
+    "aime_2025": ("AIME 2025", "math", "percent", 1, None),
 }
 
 # Benchmark ids already in the catalog that these sets reuse. Listed for review
@@ -658,6 +665,44 @@ LAUNCH_BENCHMARK_SETS: tuple[dict, ...] = (
              {"inhouse": True,
               "note": "Measures willingness to complete advanced cybersecurity requests, "
                       "not task success."}),
+        ),
+    },
+    {
+        "set_id": "google_gemini_3_7_flash_evals",
+        "source_id": "provider_blog",
+        "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/",
+        "published_at": "2026-08-13",
+        "columns": (
+            {"label": "Gemini 3.7 Flash", "model_slug": "google/gemini-3.7-flash", "condition": {}},
+            {"label": "Gemini 3.6 Flash", "model_slug": "google/gemini-3.6-flash", "condition": {}},
+        ),
+        "table_notes": (
+            "Self-reported benchmarks from Google DeepMind Gemini 3.7 Flash launch post. "
+            "FrontierCode 1.1 measured on Main split; DeepSWE measured on v1.1.",
+        ),
+        "rows": (
+            ("frontiercode_1_1", "FrontierCode 1.1 (Main)", "percent", (43.6, 34.4), {"split": "main"}),
+            ("deepswe", "DeepSWE v1.1", "percent", (65.3, 49.0), {"version": "1.1"}),
+            ("webdev_arena_elo", "WebDev Arena", "elo", (1588.0, 1538.0), {}),
+            ("gdp_pdf", "GDP.pdf", "percent", (34.0, 22.0), {}),
+            ("automationbench", "AutomationBench", "percent", (30.4, 17.0), {}),
+        ),
+    },
+    {
+        "set_id": "microsoft_mai_thinking_1_evals",
+        "source_id": "provider_blog",
+        "url": "https://microsoft.ai/news/introducing-mai-thinking-1/",
+        "published_at": "2026-08-12",
+        "columns": (
+            {"label": "MAI-Thinking-1", "model_slug": "microsoft/mai-thinking-1", "condition": {}},
+        ),
+        "table_notes": (
+            "Self-reported reasoning and coding evaluations from Microsoft AI MAI-Thinking-1 announcement.",
+        ),
+        "rows": (
+            ("aime_2025", "AIME 2025", "percent", (97.0,), {}),
+            ("aime_2026", "AIME 2026", "percent", (94.5,), {}),
+            ("swe_bench_pro", "SWE-bench Pro", "percent", (53.0,), {}),
         ),
     },
 )
