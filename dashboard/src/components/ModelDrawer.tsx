@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { Link } from 'react-router'
 import { loadModels, useData, type Model } from '../lib/data'
 import LabLogo from './LabLogo'
-import { fmtElo, fmtPrice, fmtTokens, fmtDate, fmtPercent } from '../lib/format'
+import { fmtBenchmarkScore, fmtElo, fmtPrice, fmtTokens, fmtDate } from '../lib/format'
 
 interface DrawerContextValue {
   /** Open the drawer for a model slug (e.g. "anthropic/claude-opus-4-6"). */
@@ -92,7 +92,7 @@ function DrawerBody({ slug, onClose }: { slug: string; onClose: () => void }) {
                 <div key={id} className="flex items-center justify-between text-xs">
                   <span className="truncate text-neutral-400">{id}</span>
                   <span className="ml-2 font-medium text-neutral-200">
-                    {s.score >= 100 ? fmtElo(s.score) : s.score < 1 ? fmtPercent(s.score * 100) : s.score.toFixed(1)}
+                    {fmtBenchmarkScore(s.score, s.metric)}
                   </span>
                 </div>
               ))}

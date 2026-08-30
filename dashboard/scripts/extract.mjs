@@ -216,9 +216,9 @@ for (const r of q(
 // breaks ties within one provenance class. See viz/README.md.
 const latestScores = new Map() // modelId -> { benchId: {...} }
 for (const r of q(
-  `SELECT model_id, benchmark_id, score, rank, self_reported, measured_at
+  `SELECT model_id, benchmark_id, score, metric, rank, self_reported, measured_at
    FROM (
-     SELECT model_id, benchmark_id, score, rank, self_reported, measured_at,
+     SELECT model_id, benchmark_id, score, metric, rank, self_reported, measured_at,
        ROW_NUMBER() OVER (
          PARTITION BY model_id, benchmark_id
          ORDER BY self_reported ASC, measured_at DESC
@@ -230,6 +230,7 @@ for (const r of q(
   if (!m) latestScores.set(r.model_id, (m = {}))
   m[r.benchmark_id] = {
     score: r.score,
+    metric: r.metric,
     rank: r.rank,
     selfReported: r.self_reported,
     measuredAt: r.measured_at

@@ -5,6 +5,7 @@ export interface Score {
   score: number
   rank: number | null
   selfReported: number
+  metric: string | null
   measuredAt: string | null
 }
 

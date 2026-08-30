@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from ingest.base import utcnow
+from store.benchmark_scores import canonicalize_fractional_score
 from store.spine import link_model
 
 
@@ -81,7 +82,9 @@ def promote_benchmarks(conn) -> dict:
                 unmatched += 1
                 continue
 
-            score = float(pf["score"])
+            source_score = float(pf["score"])
+            metric = BENCHMARK_CATALOG[benchmark_id][2]
+            score = canonicalize_fractional_score(source_score, metric)
             model_id = link_model(
                 conn,
                 source_id=SOURCE_ID,
@@ -104,9 +107,12 @@ def promote_benchmarks(conn) -> dict:
                     model_id,
                     benchmark_id,
                     score,
-                    pf.get("score_column"),
+                    metric,
                     _optional_float(pf.get("stderr")),
-                    json.dumps({"model_version": pf["model_version"]}),
+                    json.dumps({
+                        "model_version": pf["model_version"],
+                        "source_metric": pf.get("score_column"),
+                    }),
                     pf.get("release_date"),
                     source_snapshot_id,
                 ),

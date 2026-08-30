@@ -30,10 +30,7 @@ export function deltaColorClass(value: number | null | undefined): string {
  return value > 0 ? 'text-emerald-400' : 'text-red-400'
 }
 
-/**
- * Raw benchmark score. Many benchmarks are 0..1 fractions, some are 0..100 or
- * ELO-scale. Trims noisy floats: "0.9066" not "0.906565…", "1,533" for ELO.
- */
+/** Generic unitless benchmark score. */
 export function fmtScore(value: number | null | undefined): string {
  if (value == null || !Number.isFinite(value)) return '—'
  const abs = Math.abs(value)
@@ -41,6 +38,39 @@ export function fmtScore(value: number | null | undefined): string {
  if (abs >= 10) return value.toFixed(1)
  // 0..10 range (fractions / indices): up to 3 sig decimals, no trailing zeros.
  return parseFloat(value.toFixed(3)).toString()
+}
+const PERCENTAGE_METRICS: Record<string, true> = {
+ accuracy: true,
+ f1: true,
+ pass_rate: true,
+ pass_rate_2: true,
+ percent: true,
+ percent_correct: true,
+ percent_resolved: true,
+ percentage: true,
+}
+
+export function benchmarkMetricKind(metric: string | null | undefined): 'elo' | 'percent' | 'score' {
+ if (!metric) return 'score'
+ const normalized = metric.trim().toLowerCase().replace(/[-\s]+/g, '_')
+ if (normalized.includes('elo')) return 'elo'
+ if (PERCENTAGE_METRICS[normalized] || normalized.startsWith('percent_')) return 'percent'
+ return 'score'
+}
+
+/** Benchmark score formatted from its canonical metric, without magnitude guessing. */
+export function fmtBenchmarkScore(
+ value: number | null | undefined,
+ metric: string | null | undefined,
+): string {
+ switch (benchmarkMetricKind(metric)) {
+  case 'elo':
+   return fmtElo(value)
+  case 'percent':
+   return fmtPercent(value)
+  case 'score':
+   return fmtScore(value)
+ }
 }
 
 /** Dollars per 1M tokens → "$5", "$0.43", "$1.50". */

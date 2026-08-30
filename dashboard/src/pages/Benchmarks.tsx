@@ -4,7 +4,7 @@ import ChartState, { resolveChartStatus } from '../components/ChartState'
 import { EvidenceInspector } from '../components/EvidenceInspector'
 import { loadBenchmarks, loadModels, useData } from '../lib/data'
 import type { BenchmarkResult } from '../lib/data'
-import { fmtCount, fmtElo, fmtScore } from '../lib/format'
+import { fmtBenchmarkScore, fmtCount } from '../lib/format'
 import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
@@ -49,10 +49,10 @@ export default function Benchmarks() {
     })
   }, [benchmarks])
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
-  const formatBenchmarkScore = useMemo(() => {
-    const metric = `${bench?.id ?? ''} ${bench?.metricDefault ?? ''}`.toLowerCase()
-    return metric.includes('elo') ? fmtElo : fmtScore
-  }, [bench])
+  const formatBenchmarkScore = useMemo(
+    () => (value: number | null | undefined) => fmtBenchmarkScore(value, bench?.metricDefault),
+    [bench?.metricDefault],
+  )
 
   // Latest result per model (results are ordered by measured_at asc).
   const latest = useMemo(() => {
@@ -67,7 +67,7 @@ export default function Benchmarks() {
           map.set(m.id, {
             modelId: m.id,
             score: s.score,
-            metric: null,
+            metric: s.metric,
             rank: s.rank,
             selfReported: s.selfReported,
             measuredAt: s.measuredAt,

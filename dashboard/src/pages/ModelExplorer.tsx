@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router'
 import LabLogo from '../components/LabLogo'
 import { useModelDrawer } from '../components/ModelDrawer'
 import { loadAliases, loadElo, loadModels, useData, type Model } from '../lib/data'
-import { deltaColorClass, fmtDelta, fmtElo, fmtPrice, fmtScore, fmtTokens } from '../lib/format'
+import { deltaColorClass, fmtBenchmarkScore, fmtDelta, fmtElo, fmtPrice, fmtTokens } from '../lib/format'
 
 type SortKey =
   | 'name'
@@ -237,7 +237,10 @@ export default function ModelExplorer() {
                     {fmtDelta(eloDeltaByModelId.get(m.id))}
                   </td>
                   <td className="px-3 py-2 text-right text-neutral-300">
-                    {fmtScore(m.scores.swe_bench_verified?.score)}
+                    {fmtBenchmarkScore(
+                      m.scores.swe_bench_verified?.score,
+                      m.scores.swe_bench_verified?.metric,
+                    )}
                   </td>
                   <td className="px-3 py-2 text-neutral-400">
                     {m.open === 1 ? 'open' : m.open === 0 ? 'closed' : '—'}

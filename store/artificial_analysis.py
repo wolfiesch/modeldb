@@ -6,6 +6,7 @@ from typing import Any
 
 from ingest.base import utcnow
 from resolve.resolver import enqueue_ambiguous
+from store.benchmark_scores import canonicalize_fractional_score
 from store.spine import _artificial_analysis_candidates, link_model
 from store.price_intervals import repair_price_intervals
 
@@ -31,20 +32,20 @@ BENCHMARK_CATALOG = {
         "math",
         "index",
     ),
-    "mmlu_pro": ("MMLU-Pro", "knowledge", "score"),
-    "gpqa": ("Artificial Analysis GPQA", "reasoning", "score"),
-    "hle": ("Humanity's Last Exam", "reasoning", "score"),
-    "livecodebench": ("Artificial Analysis LiveCodeBench", "coding", "score"),
-    "aime": ("Artificial Analysis AIME", "math", "score"),
-    "aime_25": ("Artificial Analysis AIME 2025", "math", "score"),
-    "math_500": ("Artificial Analysis MATH-500", "math", "score"),
-    "ifbench": ("IFBench", "instruction_following", "score"),
-    "lcr": ("AA-LCR", "long_context", "score"),
-    "scicode": ("SciCode", "coding", "score"),
-    "tau2": ("Artificial Analysis Tau2", "agentic", "score"),
-    "tau_banking": ("Artificial Analysis Tau Banking", "agentic", "score"),
-    "terminalbench_hard": ("Artificial Analysis Terminal-Bench Hard", "agentic", "score"),
-    "terminalbench_v2_1": ("Terminal-Bench 2.1", "agentic", "score"),
+    "mmlu_pro": ("MMLU-Pro", "knowledge", "percent"),
+    "gpqa": ("Artificial Analysis GPQA", "reasoning", "percent"),
+    "hle": ("Humanity's Last Exam", "reasoning", "percent"),
+    "livecodebench": ("Artificial Analysis LiveCodeBench", "coding", "percent"),
+    "aime": ("Artificial Analysis AIME", "math", "percent"),
+    "aime_25": ("Artificial Analysis AIME 2025", "math", "percent"),
+    "math_500": ("Artificial Analysis MATH-500", "math", "percent"),
+    "ifbench": ("IFBench", "instruction_following", "percent"),
+    "lcr": ("AA-LCR", "long_context", "percent"),
+    "scicode": ("SciCode", "coding", "percent"),
+    "tau2": ("Artificial Analysis Tau2", "agentic", "percent"),
+    "tau_banking": ("Artificial Analysis Tau Banking", "agentic", "percent"),
+    "terminalbench_hard": ("Artificial Analysis Terminal-Bench Hard", "agentic", "percent"),
+    "terminalbench_v2_1": ("Terminal-Bench 2.1", "agentic", "percent"),
 }
 
 CAPABILITY_FIELDS = {
@@ -267,6 +268,8 @@ def _insert_result(
     numeric_score = _optional_float(score)
     if numeric_score is None:
         return 0
+    metric = BENCHMARK_CATALOG[benchmark_id][2]
+    canonical_score = canonicalize_fractional_score(numeric_score, metric)
     conn.execute(
         """
         INSERT INTO benchmark_result
@@ -278,8 +281,8 @@ def _insert_result(
         (
             model_id,
             benchmark_id,
-            numeric_score,
-            BENCHMARK_CATALOG[benchmark_id][2],
+            canonical_score,
+            metric,
             json.dumps(_eval_condition(parsed_fields), sort_keys=True),
             source_snapshot_id,
             raw_record_json,
