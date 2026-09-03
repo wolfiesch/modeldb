@@ -104,7 +104,7 @@ class FrontierSWEParserTests(unittest.TestCase):
         )
         conn.execute(
             """INSERT INTO model (id, canonical_slug, developer_id, display_name, created_at, updated_at)
-               VALUES (1, 'anthropic/claude-fable-5.1', 'anthropic', 'Claude Fable 5.1',
+               VALUES (1, 'anthropic/claude-fable-5-1', 'anthropic', 'Claude Fable 5.1',
                        '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')"""
         )
         conn.execute(

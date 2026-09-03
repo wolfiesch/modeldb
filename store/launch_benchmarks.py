@@ -718,9 +718,9 @@ LAUNCH_BENCHMARK_SETS: tuple[dict, ...] = (
         "url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
         "published_at": "2026-09-01",
         "columns": (
-            {"label": "Fable 5.1 (max)", "model_slug": "anthropic/claude-fable-5.1",
+            {"label": "Fable 5.1 (max)", "model_slug": "anthropic/claude-fable-5-1",
              "condition": {"reasoning_effort": "max"}},
-            {"label": "Mythos 5.1 (max)", "model_slug": "anthropic/claude-mythos-5.1",
+            {"label": "Mythos 5.1 (max)", "model_slug": "anthropic/claude-mythos-5-1",
              "condition": {"reasoning_effort": "max"}},
             {"label": "Fable 5 (max)", "model_slug": None,
              "condition": {"reasoning_effort": "max"}},

@@ -1014,7 +1014,7 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "canonical_slug": "anthropic/claude-fable-5.1",
+        "canonical_slug": "anthropic/claude-fable-5-1",
         "display_name": "Claude Fable 5.1",
         "developer_id": "anthropic",
         "family": "claude-fable",
@@ -1028,6 +1028,7 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
             ("claude-fable-5-1", "api_model_id"),
             ("claude-fable-5.1", "bare_name"),
             ("Claude Fable 5.1", "display_name"),
+            ("anthropic/claude-fable-5-1", "router_id"),
             ("anthropic/claude-fable-5.1", "router_id"),
         ),
         "evidence": {
@@ -1043,7 +1044,7 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "canonical_slug": "anthropic/claude-mythos-5.1",
+        "canonical_slug": "anthropic/claude-mythos-5-1",
         "display_name": "Claude Mythos 5.1",
         "developer_id": "anthropic",
         "family": "claude-mythos",
@@ -1057,6 +1058,7 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
             ("claude-mythos-5-1", "api_model_id"),
             ("claude-mythos-5.1", "bare_name"),
             ("Claude Mythos 5.1", "display_name"),
+            ("anthropic/claude-mythos-5-1", "router_id"),
             ("anthropic/claude-mythos-5.1", "router_id"),
         ),
         "evidence": {
