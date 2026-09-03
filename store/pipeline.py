@@ -71,7 +71,13 @@ def run_pipeline(
                 if cls is None:
                     ingest_results.append(f"{src}: unavailable ({unavailable.get(src, '?')})")
                     continue
-                ingest_results.append(run_source(src, cls, conn))
+                try:
+                    ingest_results.append(run_source(src, cls, conn))
+                except Exception as exc:
+                    # One broken source must never freeze the whole refresh:
+                    # drop its partial writes, record the failure, keep going.
+                    conn.rollback()
+                    ingest_results.append(f"{src}: FAILED ({exc})")
             summary["ingest"] = ingest_results
 
         summary["spine"] = build_spine(conn)

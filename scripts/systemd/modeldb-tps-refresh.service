@@ -1,5 +1,6 @@
 [Unit]
 Description=Refresh modeldb TPS metrics and dashboard JSON
+OnFailure=modeldb-refresh-failure.service
 Wants=network-online.target
 After=network-online.target
 

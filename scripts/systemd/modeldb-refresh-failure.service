@@ -1,0 +1,12 @@
+[Unit]
+Description=Record modeldb refresh failures to the persistent marker file
+Documentation=file:///srv/modeldb/scripts/vps-refresh.sh
+# Pulled in automatically via OnFailure= on modeldb-tps-refresh.service.
+
+[Service]
+Type=oneshot
+User=wolfie
+Group=wolfie
+# systemd-cat-style breadcrumb: the journal keeps the full failure output, this
+# marker file survives under the repo so staleness is visible without journalctl.
+ExecStart=/bin/sh -c 'mkdir -p /srv/modeldb/.perf && echo "$(date -u) modeldb-tps-refresh.service: refresh failed; inspect with: journalctl -u modeldb-tps-refresh.service" >> /srv/modeldb/.perf/refresh-failures.log'
