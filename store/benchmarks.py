@@ -61,13 +61,16 @@ def promote_benchmarks(conn) -> dict:
     ).fetchall()
     snapshot_ids = [int(row[0]) for row in snapshot_rows]
     _delete_prior_results(conn, snapshot_ids)
-
+    # Mirror store/spine.py: promote only the newest epoch snapshot per run.
+    # Reading every historical snapshot here re-inserted the full history on
+    # each refresh (root cause of the exact-duplicate benchmark_result groups).
     rows = conn.execute(
         """
         SELECT smr.source_model_id, smr.source_snapshot_id, smr.parsed_fields_json
         FROM source_model_record smr
-        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
-        WHERE ss.source_id = ?
+        WHERE smr.source_snapshot_id = (
+            SELECT MAX(id) FROM source_snapshot WHERE source_id = ?
+        )
         """,
         (SOURCE_ID,),
     )
