@@ -340,14 +340,20 @@ export function deriveChanges(observations: ChangeObservation[]): ChangeEvent[] 
 const cache = new Map<string, Promise<unknown>>()
 
 function fetchJson<T>(path: string): Promise<T> {
-  let p = cache.get(path)
-  if (!p) {
-    p = fetch(path).then((res) => {
+  const cached = cache.get(path)
+  if (cached) return cached as Promise<T>
+  const p = fetch(path, { cache: 'no-cache' })
+    .then((res) => {
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
       return res.json()
     })
-    cache.set(path, p)
-  }
+    .catch((err: unknown) => {
+      // Rejected promises must not stay pinned in the cache: evict so the
+      // next caller retries the fetch instead of replaying the failure.
+      cache.delete(path)
+      throw err
+    })
+  cache.set(path, p)
   return p as Promise<T>
 }
 

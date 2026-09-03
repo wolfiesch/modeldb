@@ -48,7 +48,7 @@ interface FrontierPoint {
 }
 
 export default function Overview() {
-  const { data: meta } = useData(loadMeta)
+  const { data: meta, error: metaError } = useData(loadMeta)
   const { data: models, loading, error } = useData(loadModels)
   const { data: eloHistory, loading: eloLoading, error: eloError } = useData(loadTextOverallElo)
   const navigate = useNavigate()
@@ -229,7 +229,21 @@ export default function Overview() {
   })
 
   if (loading || eloLoading) return <div className="text-neutral-500">Loading…</div>
-  if (error || eloError) return <div className="text-red-400">{error ?? eloError}</div>
+  const loadError = error ?? eloError ?? metaError
+  if (loadError) {
+    return (
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-8 text-center">
+        <div className="mb-2 text-lg text-neutral-200">Failed to load data</div>
+        <div className="mb-4 text-sm text-red-400">{loadError}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-neutral-500"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
   if (!models || !meta) return null
 
   const orgs = new Set(models.map((m) => m.dev).filter(Boolean)).size
@@ -260,8 +274,8 @@ export default function Overview() {
           <button
             onClick={() => setShowPareto((v) => !v)}
             className={`rounded-full border px-3 py-1 text-xs ${showPareto
-                ? 'border-pink-500 bg-pink-950 text-pink-300'
-                : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
+              ? 'border-pink-500 bg-pink-950 text-pink-300'
+              : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
               }`}
           >
             Pareto frontier
@@ -269,8 +283,8 @@ export default function Overview() {
           <button
             onClick={() => setOpenOnly((v) => !v)}
             className={`rounded-full border px-3 py-1 text-xs ${openOnly
-                ? 'border-emerald-500 bg-emerald-950 text-emerald-300'
-                : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
+              ? 'border-emerald-500 bg-emerald-950 text-emerald-300'
+              : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
               }`}
           >
             open weights
@@ -280,8 +294,8 @@ export default function Overview() {
               key={d}
               onClick={() => setDevFilter((cur) => (cur === d ? null : d))}
               className={`rounded-full border px-3 py-1 text-xs ${devFilter === d
-                  ? 'border-neutral-300 bg-neutral-800 text-white'
-                  : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
+                ? 'border-neutral-300 bg-neutral-800 text-white'
+                : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
                 }`}
               style={{ borderColor: devFilter === d ? colorForDark(d) : undefined }}
             >

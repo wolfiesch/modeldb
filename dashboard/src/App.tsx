@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router'
 import { loadMeta, useData } from './lib/data'
 import { NAVIGATION } from './lib/navigation'
@@ -20,11 +20,23 @@ const QualityLatencyPrice = lazy(() => import('./pages/QualityLatencyPrice'))
 const Changes = lazy(() => import('./pages/Changes'))
 const Lineage = lazy(() => import('./pages/Lineage'))
 const About = lazy(() => import('./pages/About'))
-
+function syncModelCountMeta(count: number) {
+  // index.html hardcodes a build-time count; live data refreshes daily
+  // without rebuilds, so keep the served description in sync at runtime.
+  const content = `Interactive dashboard of ${count} AI models: LMArena ELO history, benchmark scores, token prices, context windows, and aliases, baked from a local modeldb SQLite pipeline.`
+  for (const element of document.querySelectorAll<HTMLMetaElement>(
+    'meta[name="description"], meta[property="og:description"]',
+  )) {
+    element.setAttribute('content', content)
+  }
+}
 
 export default function App() {
   const { data: meta } = useData(loadMeta)
   const [navOpen, setNavOpen] = useState(false)
+  useEffect(() => {
+    if (meta) syncModelCountMeta(meta.counts.models)
+  }, [meta])
   return (
     <ModelDrawerProvider>
       <div className="flex h-full">

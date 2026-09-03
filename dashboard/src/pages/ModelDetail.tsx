@@ -130,7 +130,7 @@ function evidenceResult(benchmark: Benchmark, modelId: number, score: BenchmarkR
 
 export default function ModelDetail() {
   const { slug = '' } = useParams()
-  const { data: models, loading } = useData(loadModels)
+  const { data: models, loading, error } = useData(loadModels)
   const { data: benchmarks } = useData(loadBenchmarks)
   const { data: prices } = useData(loadPrices)
   const { data: aliases } = useData(loadAliases)
@@ -189,6 +189,20 @@ export default function ModelDetail() {
   const chartRef = useECharts(eloOption)
 
   if (loading) return <div className="text-neutral-500">Loading…</div>
+  if (error) {
+    return (
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-8 text-center">
+        <div className="mb-2 text-lg text-neutral-200">Failed to load model data</div>
+        <div className="mb-4 text-sm text-red-400">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-neutral-500"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
   if (!model) {
     return (
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-8 text-center">
@@ -268,7 +282,7 @@ export default function ModelDetail() {
         .toSorted(
           (a, b) =>
             Math.abs((a.scores.lmarena_text_overall?.score ?? 0) - currentElo) -
-              Math.abs((b.scores.lmarena_text_overall?.score ?? 0) - currentElo) ||
+            Math.abs((b.scores.lmarena_text_overall?.score ?? 0) - currentElo) ||
             (a.priceOut ?? Number.POSITIVE_INFINITY) - (b.priceOut ?? Number.POSITIVE_INFINITY),
         )[0]
       if (cheaperSimilar) alternativeCandidates.push({ label: 'Cheaper, similar quality', model: cheaperSimilar })
@@ -544,9 +558,9 @@ export default function ModelDetail() {
                 ) : null}
 
                 {modelEnrichment?.medianOutputTokensPerSecond ||
-                modelEnrichment?.medianTimeToFirstTokenSeconds ||
-                modelEnrichment?.medianTimeToFirstAnswerToken ||
-                modelEnrichment?.artificialAnalysisReleaseDate ? (
+                  modelEnrichment?.medianTimeToFirstTokenSeconds ||
+                  modelEnrichment?.medianTimeToFirstAnswerToken ||
+                  modelEnrichment?.artificialAnalysisReleaseDate ? (
                   <div>
                     <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
                       Speed
