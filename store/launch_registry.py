@@ -1029,8 +1029,6 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
             ("claude-fable-5.1", "bare_name"),
             ("Claude Fable 5.1", "display_name"),
             ("anthropic/claude-fable-5.1", "router_id"),
-            ("claude-fable-5.1", "api_model_id"),
-            ("claude-fable-5", "alias"),
         ),
         "evidence": {
             "source_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
@@ -1060,7 +1058,6 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
             ("claude-mythos-5.1", "bare_name"),
             ("Claude Mythos 5.1", "display_name"),
             ("anthropic/claude-mythos-5.1", "router_id"),
-            ("claude-mythos-5", "alias"),
         ),
         "evidence": {
             "source_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",

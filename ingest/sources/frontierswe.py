@@ -1,16 +1,13 @@
 """FrontierSWE leaderboard source parser."""
 from __future__ import annotations
 
-import html
 import json
 import re
 from collections.abc import Iterator
-from pathlib import Path
-from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from ingest.base import REPO_ROOT, SourceModelRecord, SourceParser
+from ingest.base import SourceModelRecord, SourceParser
 
 
 SOURCE_ID = "frontierswe"
@@ -86,16 +83,7 @@ class FrontierSWEParser(SourceParser):
                 headers = dict(response.headers)
                 return LIVE_URL, response.read(), headers
         except (HTTPError, URLError, TimeoutError) as exc:
-            # Fallback to local snapshot if present during testing or offline runs
-            raw_dir = REPO_ROOT / "data" / "raw" / SOURCE_ID
-            if raw_dir.exists():
-                cached = sorted(raw_dir.glob("*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
-                if cached:
-                    return LIVE_URL, cached[0].read_bytes(), {"Content-Type": "text/html"}
-            tmp_cached = Path("/tmp/frontierswe_raw.html")
-            if tmp_cached.exists():
-                return LIVE_URL, tmp_cached.read_bytes(), {"Content-Type": "text/html"}
-            raise RuntimeError(f"FrontierSWE fetch failed: {exc}") from exc
+            raise RuntimeError(f"FrontierSWE live fetch failed from {LIVE_URL}: {exc}") from exc
 
     def parse(self, raw: bytes, snapshot_id: int) -> Iterator[SourceModelRecord]:
         text = raw.decode("utf-8", errors="replace")
@@ -140,7 +128,7 @@ class FrontierSWEParser(SourceParser):
                     "n_tasks": 34,
                     "n_trials": 5,
                     "budget_hours": 20,
-                    "measured_at": "2026-09-02",
+                    "measured_at": None,
                 }
                 yield SourceModelRecord(
                     source_model_id=f"{BENCHMARK_ID}::{_slug(model_name)}",
@@ -207,7 +195,7 @@ class FrontierSWEParser(SourceParser):
                 "n_tasks": 34,
                 "n_trials": 5,
                 "budget_hours": 20,
-                "measured_at": "2026-09-02",
+                "measured_at": None,
             }
 
             yield SourceModelRecord(
