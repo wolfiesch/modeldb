@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPT-6 Astra Frontier Observatory</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b',
+            },
+            astra: {
+              glow: '#38bdf8',
+              accent: '#0284c7',
+              badge: '#0369a1',
+            },
+            dark: {
+              bg: '#090d16',
+              card: '#0f172a',
+              border: '#1e293b',
+              hover: '#1e293b',
+            }
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    body {
+      background-color: #090d16;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glow-astra {
+      box-shadow: 0 0 25px -5px rgba(56, 189, 248, 0.25);
+    }
+    .glow-astra-sm {
+      box-shadow: 0 0 15px -3px rgba(56, 189, 248, 0.3);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#090d16] text-slate-100 antialiased selection:bg-sky-500 selection:text-white">
+
+  <!-- Top Header Navigation -->
+  <header class="border-b border-slate-800/80 bg-[#0c1222]/90 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-sky-600 via-sky-400 to-indigo-400 flex items-center justify-center font-bold text-white shadow-lg shadow-sky-500/20">
+          <i data-lucide="sparkles" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-white tracking-tight">ModelDB</span>
+            <span class="px-2 py-0.5 text-[10px] font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full">Frontier Intelligence</span>
+          </div>
+          <p class="text-xs text-slate-400">GPT-6 Astra Focus & Benchmark Observatory</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-3 text-xs">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          Snapshot: 2026-09-03
+        </span>
+        <a href="https://models.wolfie.gg" target="_blank" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 font-medium text-white transition flex items-center gap-1.5 shadow-sm">
+          <span>Live Observatory</span>
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- Hero Focus Banner: GPT-6 Astra -->
+    <div class="relative rounded-2xl bg-gradient-to-br from-[#0e172a] via-[#0d1c38] to-[#09152b] border border-sky-500/30 p-6 sm:p-8 glow-astra overflow-hidden">
+      <div class="absolute -top-24 -right-24 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div class="space-y-3 max-w-3xl">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-500/30">
+              Primary Focus
+            </span>
+            <span class="px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+              OpenAI Flagship
+            </span>
+            <span class="px-2.5 py-1 rounded-md text-xs font-medium bg-red-500/10 text-red-300 border border-red-500/20">
+              Critical Cyber Threshold
+            </span>
+            <span class="text-xs text-slate-400 ml-1">Released Sep 3, 2026</span>
+          </div>
+          
+          <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
+            OpenAI GPT-6 Astra
+            <span class="text-sm font-normal px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              `openai/gpt-6-astra`
+            </span>
+          </h1>
+          
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
+            Trained on >100,000 GPUs at the Stargate cluster with extensive recursive synthetic supervision. Astra introduces dramatic structural leaps in abstract multi-step reasoning, formal mathematics, and autonomous cybersecurity agents while sharing the $10 / $50 pricing tier with Claude Fable 5.1.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-3 min-w-[280px]">
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+            <div class="text-xs text-slate-400 font-medium">Standard Pricing</div>
+            <div class="text-lg font-bold text-sky-400 mono">$10 <span class="text-xs font-normal text-slate-400">/ $50</span></div>
+            <div class="text-[11px] text-slate-400">In / Out per 1M tokens</div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+            <div class="text-xs text-slate-400 font-medium">Fast Tier API</div>
+            <div class="text-lg font-bold text-indigo-300 mono">2.5× Speed</div>
+            <div class="text-[11px] text-slate-400">2× cost ($20 / $100)</div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+            <div class="text-xs text-slate-400 font-medium">ARC-AGI-3 (Harness)</div>
+            <div class="text-lg font-bold text-emerald-400 mono">98.6%</div>
+            <div class="text-[11px] text-emerald-500 font-medium">+68.4% vs Opus 5</div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+            <div class="text-xs text-slate-400 font-medium">FrontierMath Tier 4</div>
+            <div class="text-lg font-bold text-emerald-400 mono">97.6%</div>
+            <div class="text-[11px] text-emerald-500 font-medium">+9.8% vs Fable 5.1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Frontier Leap Delta Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Delta 1: ARC-AGI-3 -->
+      <div class="rounded-xl bg-[#0f172a] border border-slate-800 p-4 space-y-2 hover:border-slate-700 transition">
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>ARC-AGI-3</span>
+          <span class="px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 font-mono">Reasoning</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-2xl font-bold text-white mono">98.6%</span>
+          <span class="text-xs font-semibold text-emerald-400">+90.8% vs Sol (7.8%)</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div class="bg-gradient-to-r from-sky-500 to-emerald-400 h-full rounded-full" style="width: 98.6%"></div>
+        </div>
+        <p class="text-[11px] text-slate-400 pt-1">Inter-turn reasoning harness; prior ceiling was 30.2% on Opus 5.</p>
+      </div>
+
+      <!-- Delta 2: FrontierMath -->
+      <div class="rounded-xl bg-[#0f172a] border border-slate-800 p-4 space-y-2 hover:border-slate-700 transition">
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>FrontierMath Tier 4 (v2)</span>
+          <span class="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 font-mono">Hard Math</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-2xl font-bold text-white mono">97.6%</span>
+          <span class="text-xs font-semibold text-emerald-400">+9.8% vs Fable 5.1</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div class="bg-gradient-to-r from-indigo-500 to-sky-400 h-full rounded-full" style="width: 97.6%"></div>
+        </div>
+        <p class="text-[11px] text-slate-400 pt-1">Surpasses Claude Fable 5.1 (87.8%) and GPT-5.6 Sol (83.0%).</p>
+      </div>
+
+      <!-- Delta 3: ExploitBench -->
+      <div class="rounded-xl bg-[#0f172a] border border-slate-800 p-4 space-y-2 hover:border-slate-700 transition">
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>ExploitBench</span>
+          <span class="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">Cybersecurity</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-2xl font-bold text-white mono">100.0%</span>
+          <span class="text-xs font-semibold text-emerald-400">Full Solve Rate</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div class="bg-gradient-to-r from-red-500 to-rose-400 h-full rounded-full" style="width: 100%"></div>
+        </div>
+        <p class="text-[11px] text-slate-400 pt-1">Triggered Critical cybersecurity rating; Daybreak access gate.</p>
+      </div>
+
+      <!-- Delta 4: Terminal-Bench Science -->
+      <div class="rounded-xl bg-[#0f172a] border border-slate-800 p-4 space-y-2 hover:border-slate-700 transition">
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span>Terminal-Bench Science</span>
+          <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-mono">Scientific CLI</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="text-2xl font-bold text-white mono">64.6%</span>
+          <span class="text-xs font-semibold text-emerald-400">+12.0% vs Fable 5.1</span>
+        </div>
+        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div class="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full" style="width: 64.6%"></div>
+        </div>
+        <p class="text-[11px] text-slate-400 pt-1">Massive uplift over Sol (22.4%) and Opus 5 (29.0%).</p>
+      </div>
+    </div>
+
+    <!-- Interactive Navigation Tabs -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-3">
+      <div class="flex items-center gap-2">
+        <button id="tab-benchmarks" onclick="switchView('benchmarks')" class="px-4 py-2 text-sm font-medium rounded-lg bg-sky-600 text-white shadow-sm flex items-center gap-2">
+          <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+          <span>Benchmark Head-to-Head</span>
+        </button>
+        <button id="tab-matrix" onclick="switchView('matrix')" class="px-4 py-2 text-sm font-medium rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center gap-2">
+          <i data-lucide="table" class="w-4 h-4"></i>
+          <span>Consolidated Matrix</span>
+        </button>
+        <button id="tab-economics" onclick="switchView('economics')" class="px-4 py-2 text-sm font-medium rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center gap-2">
+          <i data-lucide="dollar-sign" class="w-4 h-4"></i>
+          <span>Economics & Pareto Frontier</span>
+        </button>
+        <button id="tab-models" onclick="switchView('models')" class="px-4 py-2 text-sm font-medium rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center gap-2">
+          <i data-lucide="layers" class="w-4 h-4"></i>
+          <span>Model Profiles (9)</span>
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-400 flex items-center gap-2">
+        <span>Cohort:</span>
+        <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-slate-300">9 Frontier Models</span>
+      </div>
+    </div>
+
+    <!-- VIEW 1: Benchmark Head-to-Head Charts -->
+    <section id="view-benchmarks" class="space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main Comparison Bar Chart -->
+        <div class="lg:col-span-2 rounded-2xl bg-[#0f172a] border border-slate-800 p-6 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                <span>Direct Head-to-Head: Astra vs Cohort</span>
+                <span class="px-2 py-0.5 text-xs rounded bg-sky-500/20 text-sky-400 font-normal">Ranked by Astra Score</span>
+              </h2>
+              <p class="text-xs text-slate-400">Selecting an evaluation updates the detailed competitor delta breakdown.</p>
+            </div>
+            
+            <select id="benchmarkSelector" onchange="updateBenchmarkChart()" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+              <option value="all">Compare All Common Benchmarks</option>
+              <option value="arc_agi_3">ARC-AGI-3 (Reasoning)</option>
+              <option value="frontiermath_tier_4_v2">FrontierMath Tier 4 v2 (Math)</option>
+              <option value="gpqa_diamond">GPQA Diamond (Science)</option>
+              <option value="benchcad">BenchCAD (Engineering)</option>
+              <option value="deepswe">DeepSWE v1.1 (Agentic Coding)</option>
+              <option value="terminal_bench_science_0_1">Terminal-Bench Science (CLI)</option>
+              <option value="exploitbench">ExploitBench (Cybersecurity)</option>
+              <option value="sre_bench">SRE-Bench (Reliability)</option>
+            </select>
+          </div>
+
+          <div class="h-96 w-full pt-2">
+            <canvas id="primaryBenchmarkCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Benchmark Deep Dive & Delta Panel -->
+        <div class="rounded-2xl bg-[#0f172a] border border-slate-800 p-6 flex flex-col justify-between space-y-4">
+          <div>
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 class="text-sm font-bold text-white uppercase tracking-wider text-slate-300">Frontier Performance Summary</h3>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400">14 Evals Evaluated</span>
+            </div>
+
+            <div class="mt-4 space-y-3" id="deltaBreakdown">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800/80 text-xs text-slate-300 space-y-1.5">
+            <div class="font-semibold text-sky-400 flex items-center gap-1.5">
+              <i data-lucide="info" class="w-3.5 h-3.5"></i>
+              <span>Evaluation Methodology Note</span>
+            </div>
+            <p class="text-slate-400 leading-normal">
+              Astra benchmarks were captured from first-party launch eval runs using the standard Responses API harness. ExploitBench and SRE-Bench reflect autonomous 4-attempt task cycles.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: Consolidated Matrix -->
+    <section id="view-matrix" class="hidden space-y-6">
+      <div class="rounded-2xl bg-[#0f172a] border border-slate-800 p-6 overflow-hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-white">Consolidated Cross-Model Evaluation Matrix</h2>
+            <p class="text-xs text-slate-400">Exact source-attributable scores recorded in ModelDB for the September 2026 frontier cohort.</p>
+          </div>
+
+          <div class="flex items-center gap-2 text-xs">
+            <span class="inline-flex items-center gap-1">
+              <span class="w-3 h-3 rounded-full bg-sky-500"></span> Astra Focus
+            </span>
+            <span class="inline-flex items-center gap-1 ml-2">
+              <span class="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500"></span> Top Cohort Score
+            </span>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left text-xs text-slate-200 border-collapse" id="matrixTable">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 bg-slate-900/60 font-medium">
+                <th class="p-3 whitespace-nowrap">Benchmark / Metric</th>
+                <th class="p-3 whitespace-nowrap bg-sky-950/40 text-sky-300 border-x border-sky-500/20">GPT-6 Astra</th>
+                <th class="p-3 whitespace-nowrap">GPT-5.6 Sol</th>
+                <th class="p-3 whitespace-nowrap">Claude Fable 5.1</th>
+                <th class="p-3 whitespace-nowrap">Claude Opus 5</th>
+                <th class="p-3 whitespace-nowrap">Gemini 3.8 Flash</th>
+                <th class="p-3 whitespace-nowrap">Qwen3.8-Max</th>
+                <th class="p-3 whitespace-nowrap">Kimi K3</th>
+                <th class="p-3 whitespace-nowrap">GLM-5.3</th>
+                <th class="p-3 whitespace-nowrap">DeepSeek V4 Pro</th>
+              </tr>
+            </thead>
+            <tbody id="matrixTableBody" class="divide-y divide-slate-800/60">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: Economics & Pareto Frontier -->
+    <section id="view-economics" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 rounded-2xl bg-[#0f172a] border border-slate-800 p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-white">Token Cost vs Benchmark Capability</h2>
+              <p class="text-xs text-slate-400">Blended price (3:1 input:output) against DeepSWE coding and GPQA Diamond.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="updateScatterMetric('deepswe')" id="btn-scatter-deepswe" class="px-2.5 py-1 text-xs rounded-md bg-sky-600 text-white">DeepSWE v1.1</button>
+              <button onclick="updateScatterMetric('gpqa_diamond')" id="btn-scatter-gpqa" class="px-2.5 py-1 text-xs rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700">GPQA Diamond</button>
+            </div>
+          </div>
+
+          <div class="h-96 w-full pt-2">
+            <canvas id="scatterChartCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Token Pricing Comparison Bar -->
+        <div class="rounded-2xl bg-[#0f172a] border border-slate-800 p-6 space-y-4">
+          <h3 class="text-sm font-bold text-white uppercase tracking-wider text-slate-300">API Token Economics (USD / 1M tokens)</h3>
+          <div class="h-96 w-full pt-2">
+            <canvas id="priceChartCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: Detailed Model Profiles -->
+    <section id="view-models" class="hidden space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" id="modelCardGrid">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800/80 bg-[#0c1222] py-8 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-slate-400">ModelDB Project</span>
+        <span>•</span>
+        <span>models.wolfie.gg</span>
+      </div>
+      <div>
+        Source-attributable data recorded in ModelDB SQLite. No blended composite rankings.
+      </div>
+    </div>
+  </footer>
+
+  <!-- Script Data & Logic -->
+  <script>
+    const MODELS = [
+      {
+        id: "gpt-6-astra",
+        slug: "openai/gpt-6-astra",
+        name: "GPT-6 Astra",
+        focus: true,
+        developer: "OpenAI",
+        releaseDate: "2026-09-03",
+        role: "Reasoning Flagship",
+        openWeights: false,
+        context: "1,000,000+",
+        maxOutput: "128,000+",
+        priceIn: 10.0,
+        priceOut: 50.0,
+        blendedPrice: 20.0,
+        notes: "100k+ GPU cluster at Stargate; Critical cyber threshold; Responses API harness.",
+        scores: {
+          arc_agi_3: 98.6,
+          frontiermath_tier_4_v2: 97.6,
+          gpqa_diamond: 96.0,
+          benchcad: 95.9,
+          deepswe: 74.1,
+          terminal_bench_science_0_1: 64.6,
+          healthbench_professional: 63.4,
+          agents_last_exam: 59.3,
+          automationbench: 41.4,
+          gene_bench_pro: 39.0,
+          medchem_bench_internal: 49.7,
+          exploitbench: 100.0,
+          sre_bench: 99.2,
+          auto_review_circumvention_internal: 0.0
+        }
+      },
+      {
+        id: "gpt-5-6-sol",
+        slug: "openai/gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        developer: "OpenAI",
+        releaseDate: "2026-07-09",
+        role: "Prior OpenAI Flagship",
+        openWeights: false,
+        context: "1,050,000",
+        maxOutput: "128,000",
+        priceIn: 5.0,
+        priceOut: 30.0,
+        blendedPrice: 11.25,
+        notes: "Prior OpenAI reasoning lead; dense specialist with broad evaluation suite.",
+        scores: {
+          arc_agi_3: 7.8,
+          frontiermath_tier_4_v2: 83.0,
+          gpqa_diamond: 89.9,
+          benchcad: 83.3,
+          deepswe: 70.8,
+          terminal_bench_science_0_1: 22.4,
+          healthbench_professional: 60.5,
+          agents_last_exam: 52.7,
+          automationbench: 18.1,
+          gene_bench_pro: 28.7,
+          medchem_bench_internal: 47.4,
+          exploitbench: 78.5,
+          sre_bench: 68.7,
+          auto_review_circumvention_internal: 0.29,
+          epoch_capabilities_index: 161.7,
+          lmarena_text_coding: 1491,
+          lmarena_text_overall: 1455
+        }
+      },
+      {
+        id: "claude-fable-5-1",
+        slug: "anthropic/claude-fable-5-1",
+        name: "Claude Fable 5.1",
+        developer: "Anthropic",
+        releaseDate: "2026-09-01",
+        role: "Science & Reasoning Flagship",
+        openWeights: false,
+        context: "1,000,000",
+        maxOutput: "128,000",
+        priceIn: 10.0,
+        priceOut: 50.0,
+        blendedPrice: 20.0,
+        notes: "Scientific discovery and complex synthesis flagship; recursive thinking trace.",
+        scores: {
+          frontiermath_tier_4_v2: 87.8,
+          gpqa_diamond: 93.7,
+          benchcad: 84.3,
+          deepswe: 67.4,
+          terminal_bench_science_0_1: 52.6,
+          automationbench: 31.4,
+          healthbench_professional: 56.6,
+          hle: 65.0,
+          frontierswe_v2: 56.3,
+          epoch_capabilities_index: 163.0
+        }
+      },
+      {
+        id: "claude-opus-5",
+        slug: "anthropic/claude-opus-5",
+        name: "Claude Opus 5",
+        developer: "Anthropic",
+        releaseDate: "2026-07-24",
+        role: "General Frontier Reasoning",
+        openWeights: false,
+        context: "1,000,000",
+        maxOutput: "128,000",
+        priceIn: 5.0,
+        priceOut: 25.0,
+        blendedPrice: 10.0,
+        notes: "Long-horizon agentic task execution and coding engine.",
+        scores: {
+          arc_agi_3: 30.2,
+          frontiermath_tier_4_v2: 73.2,
+          gpqa_diamond: 93.2,
+          benchcad: 82.1,
+          deepswe: 68.8,
+          terminal_bench_science_0_1: 29.0,
+          agents_last_exam: 52.7,
+          automationbench: 26.9,
+          healthbench_professional: 57.5,
+          exploitbench: 70.0,
+          epoch_capabilities_index: 162.4,
+          lmarena_text_coding: 1531,
+          lmarena_text_overall: 1504
+        }
+      },
+      {
+        id: "gemini-3-8-flash",
+        slug: "google/gemini-3.8-flash",
+        name: "Gemini 3.8 Flash",
+        developer: "Google",
+        releaseDate: "2026-09-02",
+        role: "High-Efficiency Frontier",
+        openWeights: false,
+        context: "1,048,576",
+        maxOutput: "65,536",
+        priceIn: 0.75,
+        priceOut: 3.75,
+        blendedPrice: 1.50,
+        notes: "High-efficiency native multimodal architecture with ultra-low latency.",
+        scores: {
+          deepswe: 73.8,
+          gpqa_diamond: 95.3,
+          healthbench_professional: 52.1,
+          hle: 54.9
+        }
+      },
+      {
+        id: "qwen-3-8-max",
+        slug: "alibaba/qwen3.8-max",
+        name: "Qwen3.8-Max",
+        developer: "Alibaba",
+        releaseDate: "2026-08-03",
+        role: "Open Weights MoE Flagship",
+        openWeights: true,
+        context: "1,000,000",
+        maxOutput: "131,072",
+        priceIn: 2.0,
+        priceOut: 6.0,
+        blendedPrice: 3.0,
+        notes: "2.4T parameter sparse MoE (~95B active); open weights available.",
+        scores: {
+          gpqa_diamond: 92.7,
+          deepswe: 57.5,
+          agents_last_exam: 27.0,
+          automationbench: 27.3,
+          hle: 56.2,
+          frontierswe_v2: 15.8,
+          epoch_capabilities_index: 156.6,
+          lmarena_text_coding: 1497,
+          lmarena_text_overall: 1480
+        }
+      },
+      {
+        id: "kimi-k3",
+        slug: "moonshotai/kimi-k3",
+        name: "Kimi K3",
+        developer: "Moonshot AI",
+        releaseDate: "2026-07-16",
+        role: "Open Long-Context Flagship",
+        openWeights: true,
+        context: "1,048,576",
+        maxOutput: "943,718",
+        priceIn: 3.0,
+        priceOut: 15.0,
+        blendedPrice: 6.0,
+        notes: "2.8T MoE with Kimi Data Augmentation and attention residuals.",
+        scores: {
+          gpqa_diamond: 91.9,
+          deepswe: 68.5,
+          frontierswe_v2: 25.9,
+          epoch_capabilities_index: 157.7,
+          lmarena_text_coding: 1510,
+          lmarena_text_overall: 1476
+        }
+      },
+      {
+        id: "deepseek-v4-pro",
+        slug: "deepseek/deepseek-v4-pro-0813",
+        name: "DeepSeek V4 Pro (0813)",
+        developer: "DeepSeek",
+        releaseDate: "2026-08-12",
+        role: "Open Weights Flagship",
+        openWeights: true,
+        context: "1,048,576",
+        maxOutput: "1,048,576",
+        priceIn: 1.32,
+        priceOut: 3.96,
+        blendedPrice: 1.98,
+        notes: "1.6T parameter MoE with 49B active; 1M full-context generation; MIT licensed.",
+        scores: {
+          gpqa_diamond: 91.7,
+          epoch_capabilities_index: 155.4
+        }
+      },
+      {
+        id: "glm-5-3",
+        slug: "zhipuai/glm-5.3",
+        name: "GLM-5.3",
+        developer: "Zhipu AI",
+        releaseDate: "2026-08-14",
+        role: "Agentic High-Throughput",
+        openWeights: false,
+        context: "1,310,720",
+        maxOutput: "262,144",
+        priceIn: 1.4,
+        priceOut: 4.4,
+        blendedPrice: 2.15,
+        notes: "High-throughput long-context agentic model with dynamic tool calling.",
+        scores: {
+          gpqa_diamond: 90.9,
+          deepswe: 69.0,
+          frontierswe_v2: 30.2,
+          epoch_capabilities_index: 155.3,
+          lmarena_text_coding: 1503,
+          lmarena_text_overall: 1474
+        }
+      }
+    ];
+
+    const BENCHMARKS_METADATA = [
+      { id: "arc_agi_3", label: "ARC-AGI-3", domain: "Reasoning", metric: "%" },
+      { id: "frontiermath_tier_4_v2", label: "FrontierMath Tier 4 (v2)", domain: "Math", metric: "%" },
+      { id: "gpqa_diamond", label: "GPQA Diamond", domain: "Science", metric: "%" },
+      { id: "benchcad", label: "BenchCAD", domain: "Engineering", metric: "%" },
+      { id: "deepswe", label: "DeepSWE v1.1", domain: "Coding", metric: "%" },
+      { id: "terminal_bench_science_0_1", label: "Terminal-Bench Science", domain: "CLI / Science", metric: "%" },
+      { id: "healthbench_professional", label: "HealthBench Pro", domain: "Medical", metric: "%" },
+      { id: "agents_last_exam", label: "Agents' Last Exam", domain: "Agentic", metric: "%" },
+      { id: "automationbench", label: "AutomationBench", domain: "Workflow", metric: "%" },
+      { id: "exploitbench", label: "ExploitBench", domain: "Security", metric: "%" },
+      { id: "sre_bench", label: "SRE-Bench", domain: "Reliability", metric: "%" },
+      { id: "gene_bench_pro", label: "GeneBench Pro", domain: "Biotech", metric: "%" },
+      { id: "medchem_bench_internal", label: "MedChemBench", domain: "Chemistry", metric: "%" },
+      { id: "auto_review_circumvention_internal", label: "Auto-review Circumvention", domain: "Safety", metric: "% (lower is better)", lowerBetter: true },
+      { id: "hle", label: "Humanity's Last Exam (HLE)", domain: "General Frontier", metric: "%" },
+      { id: "frontierswe_v2", label: "FrontierSWE v2", domain: "Software Eng", metric: "%" },
+      { id: "epoch_capabilities_index", label: "Epoch Capabilities Index", domain: "Composite Index", metric: "pts" }
+    ];
+
+    let primaryChart = null;
+    let scatterChart = null;
+    let priceChart = null;
+    let currentScatterMetric = 'deepswe';
+
+    function init() {
+      lucide.createIcons();
+      buildMatrixTable();
+      buildModelCards();
+      renderPrimaryBenchmarkChart('all');
+      renderDeltaBreakdown();
+      renderPriceChart();
+      renderScatterChart(currentScatterMetric);
+    }
+
+    function switchView(viewName) {
+      const views = ['benchmarks', 'matrix', 'economics', 'models'];
+      views.forEach(v => {
+        const el = document.getElementById(`view-${v}`);
+        const tab = document.getElementById(`tab-${v}`);
+        if (v === viewName) {
+          el.classList.remove('hidden');
+          tab.classList.remove('bg-slate-800/80', 'text-slate-300');
+          tab.classList.add('bg-sky-600', 'text-white');
+        } else {
+          el.classList.add('hidden');
+          tab.classList.remove('bg-sky-600', 'text-white');
+          tab.classList.add('bg-slate-800/80', 'text-slate-300');
+        }
+      });
+      lucide.createIcons();
+    }
+
+    function renderPrimaryBenchmarkChart(selectedKey) {
+      const ctx = document.getElementById('primaryBenchmarkCanvas').getContext('2d');
+      if (primaryChart) primaryChart.destroy();
+
+      if (selectedKey === 'all') {
+        const keys = ['arc_agi_3', 'frontiermath_tier_4_v2', 'gpqa_diamond', 'benchcad', 'deepswe', 'terminal_bench_science_0_1', 'exploitbench', 'sre_bench'];
+        const labels = keys.map(k => BENCHMARKS_METADATA.find(b => b.id === k).label);
+
+        const astraModel = MODELS.find(m => m.id === 'gpt-6-astra');
+        const solModel = MODELS.find(m => m.id === 'gpt-5-6-sol');
+        const fableModel = MODELS.find(m => m.id === 'claude-fable-5-1');
+        const opusModel = MODELS.find(m => m.id === 'claude-opus-5');
+
+        primaryChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'GPT-6 Astra (Focus)',
+                data: keys.map(k => astraModel.scores[k] || 0),
+                backgroundColor: 'rgba(56, 189, 248, 0.85)',
+                borderColor: '#38bdf8',
+                borderWidth: 1.5,
+                borderRadius: 4
+              },
+              {
+                label: 'Claude Fable 5.1',
+                data: keys.map(k => fableModel.scores[k] || 0),
+                backgroundColor: 'rgba(244, 63, 94, 0.65)',
+                borderColor: '#f43f5e',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                label: 'Claude Opus 5',
+                data: keys.map(k => opusModel.scores[k] || 0),
+                backgroundColor: 'rgba(168, 85, 247, 0.55)',
+                borderColor: '#a855f7',
+                borderWidth: 1,
+                borderRadius: 4
+              },
+              {
+                label: 'GPT-5.6 Sol',
+                data: keys.map(k => solModel.scores[k] || 0),
+                backgroundColor: 'rgba(100, 116, 139, 0.6)',
+                borderColor: '#94a3b8',
+                borderWidth: 1,
+                borderRadius: 4
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } }
+              },
+              tooltip: {
+                callbacks: {
+                  label: (c) => ` ${c.dataset.label}: ${c.raw.toFixed(1)}%`
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#94a3b8', font: { size: 10 } },
+                grid: { color: 'rgba(51, 65, 85, 0.2)' }
+              },
+              y: {
+                max: 105,
+                ticks: { color: '#94a3b8', callback: v => v + '%' },
+                grid: { color: 'rgba(51, 65, 85, 0.3)' }
+              }
+            }
+          }
+        });
+      } else {
+        const meta = BENCHMARKS_METADATA.find(b => b.id === selectedKey);
+        const sortedModels = [...MODELS]
+          .filter(m => m.scores[selectedKey] !== undefined)
+          .sort((a, b) => (meta.lowerBetter ? a.scores[selectedKey] - b.scores[selectedKey] : b.scores[selectedKey] - a.scores[selectedKey]));
+
+        primaryChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: sortedModels.map(m => m.name),
+            datasets: [{
+              label: `${meta.label} (${meta.metric})`,
+              data: sortedModels.map(m => m.scores[selectedKey]),
+              backgroundColor: sortedModels.map(m => m.id === 'gpt-6-astra' ? 'rgba(56, 189, 248, 0.9)' : 'rgba(71, 85, 105, 0.7)'),
+              borderColor: sortedModels.map(m => m.id === 'gpt-6-astra' ? '#38bdf8' : '#64748b'),
+              borderWidth: 1.5,
+              borderRadius: 4
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (c) => ` Score: ${c.raw.toFixed(1)}${meta.metric}`
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#94a3b8' },
+                grid: { color: 'rgba(51, 65, 85, 0.3)' }
+              },
+              y: {
+                ticks: { color: '#f1f5f9', font: { weight: '500' } },
+                grid: { display: false }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    function updateBenchmarkChart() {
+      const val = document.getElementById('benchmarkSelector').value;
+      renderPrimaryBenchmarkChart(val);
+    }
+
+    function renderDeltaBreakdown() {
+      const container = document.getElementById('deltaBreakdown');
+      const deltas = [
+        { name: "ARC-AGI-3", astra: 98.6, nextName: "Opus 5", nextScore: 30.2, gain: "+68.4%" },
+        { name: "FrontierMath Tier 4", astra: 97.6, nextName: "Fable 5.1", nextScore: 87.8, gain: "+9.8%" },
+        { name: "ExploitBench", astra: 100.0, nextName: "Sol", nextScore: 78.5, gain: "+21.5%" },
+        { name: "SRE-Bench", astra: 99.2, nextName: "Sol", nextScore: 68.7, gain: "+30.5%" },
+        { name: "Terminal-Bench Science", astra: 64.6, nextName: "Fable 5.1", nextScore: 52.6, gain: "+12.0%" },
+        { name: "BenchCAD", astra: 95.9, nextName: "Fable 5.1", nextScore: 84.3, gain: "+11.6%" },
+        { name: "DeepSWE v1.1", astra: 74.1, nextName: "Gemini 3.8", nextScore: 73.8, gain: "+0.3%" },
+      ];
+
+      container.innerHTML = deltas.map(d => `
+        <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs">
+          <div>
+            <div class="font-medium text-slate-200">${d.name}</div>
+            <div class="text-[11px] text-slate-400">vs ${d.nextName} (${d.nextScore}%)</div>
+          </div>
+          <div class="text-right">
+            <span class="font-bold text-sky-400 mono">${d.astra}%</span>
+            <span class="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold mono">${d.gain}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function buildMatrixTable() {
+      const tbody = document.getElementById('matrixTableBody');
+      const astra = MODELS.find(m => m.id === 'gpt-6-astra');
+      const sol = MODELS.find(m => m.id === 'gpt-5-6-sol');
+      const fable = MODELS.find(m => m.id === 'claude-fable-5-1');
+      const opus = MODELS.find(m => m.id === 'claude-opus-5');
+      const gemini = MODELS.find(m => m.id === 'gemini-3-8-flash');
+      const qwen = MODELS.find(m => m.id === 'qwen-3-8-max');
+      const kimi = MODELS.find(m => m.id === 'kimi-k3');
+      const glm = MODELS.find(m => m.id === 'glm-5-3');
+      const deepseek = MODELS.find(m => m.id === 'deepseek-v4-pro');
+
+      const allDisplayModels = [astra, sol, fable, opus, gemini, qwen, kimi, glm, deepseek];
+
+      tbody.innerHTML = BENCHMARKS_METADATA.map(b => {
+        const scores = allDisplayModels.map(m => m.scores[b.id]);
+        const validScores = scores.filter(s => s !== undefined);
+        const maxScore = validScores.length > 0 ? (b.lowerBetter ? Math.min(...validScores) : Math.max(...validScores)) : null;
+
+        const cells = allDisplayModels.map((m, idx) => {
+          const s = m.scores[b.id];
+          if (s === undefined) {
+            return `<td class="p-3 text-slate-600 ${idx === 0 ? 'bg-sky-950/30 font-medium' : ''}">-</td>`;
+          }
+          const isBest = s === maxScore;
+          const isAstra = idx === 0;
+
+          let badgeClass = '';
+          if (isAstra) {
+            badgeClass = 'font-bold text-sky-300 mono bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/30';
+          } else if (isBest) {
+            badgeClass = 'font-semibold text-emerald-300 mono bg-emerald-500/10 px-1.5 py-0.5 rounded';
+          } else {
+            badgeClass = 'text-slate-300 mono';
+          }
+
+          return `
+            <td class="p-3 whitespace-nowrap ${idx === 0 ? 'bg-sky-950/30 border-x border-sky-500/20' : ''}">
+              <span class="${badgeClass}">${s.toFixed(1)}${b.metric === '%' ? '%' : ''}</span>
+            </td>
+          `;
+        }).join('');
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="p-3 font-medium text-slate-300 whitespace-nowrap">
+              <div>${b.label}</div>
+              <div class="text-[10px] text-slate-400">${b.domain}</div>
+            </td>
+            ${cells}
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderScatterChart(metricKey) {
+      const ctx = document.getElementById('scatterChartCanvas').getContext('2d');
+      if (scatterChart) scatterChart.destroy();
+
+      const meta = BENCHMARKS_METADATA.find(b => b.id === metricKey);
+      const points = MODELS
+        .filter(m => m.scores[metricKey] !== undefined)
+        .map(m => ({
+          x: m.blendedPrice,
+          y: m.scores[metricKey],
+          model: m
+        }));
+
+      scatterChart = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+          datasets: [{
+            label: meta.label,
+            data: points,
+            backgroundColor: points.map(p => p.model.id === 'gpt-6-astra' ? '#38bdf8' : (p.model.openWeights ? '#34d399' : '#f43f5e')),
+            borderColor: '#ffffff',
+            borderWidth: 1,
+            pointRadius: points.map(p => p.model.id === 'gpt-6-astra' ? 9 : 6),
+            pointHoverRadius: 10
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (c) => {
+                  const m = c.raw.model;
+                  return ` ${m.name}: ${c.raw.y.toFixed(1)}${meta.metric} ($${c.raw.x.toFixed(2)}/1M blended)`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: 'Blended Cost (USD / 1M tokens - 3:1 ratio)', color: '#94a3b8' },
+              ticks: { color: '#94a3b8', callback: v => '$' + v },
+              grid: { color: 'rgba(51, 65, 85, 0.2)' }
+            },
+            y: {
+              title: { display: true, text: `${meta.label} (${meta.metric})`, color: '#94a3b8' },
+              ticks: { color: '#94a3b8' },
+              grid: { color: 'rgba(51, 65, 85, 0.3)' }
+            }
+          }
+        }
+      });
+    }
+
+    function updateScatterMetric(key) {
+      currentScatterMetric = key;
+      document.getElementById('btn-scatter-deepswe').className = key === 'deepswe' ? 'px-2.5 py-1 text-xs rounded-md bg-sky-600 text-white' : 'px-2.5 py-1 text-xs rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700';
+      document.getElementById('btn-scatter-gpqa').className = key === 'gpqa_diamond' ? 'px-2.5 py-1 text-xs rounded-md bg-sky-600 text-white' : 'px-2.5 py-1 text-xs rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700';
+      renderScatterChart(key);
+    }
+
+    function renderPriceChart() {
+      const ctx = document.getElementById('priceChartCanvas').getContext('2d');
+      if (priceChart) priceChart.destroy();
+
+      const sorted = [...MODELS].sort((a, b) => b.priceOut - a.priceOut);
+
+      priceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(m => m.name),
+          datasets: [
+            {
+              label: 'Input ($/1M)',
+              data: sorted.map(m => m.priceIn),
+              backgroundColor: 'rgba(56, 189, 248, 0.7)',
+              borderRadius: 3
+            },
+            {
+              label: 'Output ($/1M)',
+              data: sorted.map(m => m.priceOut),
+              backgroundColor: 'rgba(99, 102, 241, 0.8)',
+              borderRadius: 3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 10 } } },
+            tooltip: {
+              callbacks: {
+                label: (c) => ` ${c.dataset.label}: $${c.raw.toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', callback: v => '$' + v },
+              grid: { color: 'rgba(51, 65, 85, 0.2)' }
+            },
+            y: {
+              ticks: { color: '#f1f5f9', font: { size: 10 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+
+    function buildModelCards() {
+      const grid = document.getElementById('modelCardGrid');
+      grid.innerHTML = MODELS.map(m => `
+        <div class="rounded-xl ${m.focus ? 'bg-gradient-to-br from-[#0e1c38] to-[#0f172a] border-2 border-sky-500/50 glow-astra-sm' : 'bg-[#0f172a] border border-slate-800'} p-5 space-y-4 hover:border-slate-700 transition">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-white text-base">${m.name}</h3>
+                ${m.focus ? '<span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 text-[10px] font-semibold">FOCUS</span>' : ''}
+              </div>
+              <div class="text-xs text-slate-400 font-mono">${m.slug}</div>
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${m.openWeights ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-300 border border-slate-700'}">
+              ${m.openWeights ? 'Open Weights' : 'Proprietary'}
+            </span>
+          </div>
+
+          <p class="text-xs text-slate-300 leading-relaxed">${m.notes}</p>
+
+          <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-xs">
+            <div>
+              <span class="text-slate-400 block text-[10px]">Pricing (In / Out)</span>
+              <span class="font-bold text-sky-400 mono">$${m.priceIn} / $${m.priceOut}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[10px]">Context / MaxOut</span>
+              <span class="font-semibold text-slate-200 mono">${m.context}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[10px]">Developer</span>
+              <span class="font-medium text-slate-300">${m.developer}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[10px]">Released</span>
+              <span class="font-medium text-slate-300">${m.releaseDate}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
