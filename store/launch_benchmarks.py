@@ -128,6 +128,13 @@ BENCHMARK_CATALOG: dict[str, tuple[str, str | None, str, int, str | None]] = {
                 "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/"),
     # --- Microsoft MAI-Thinking-1 ---
     "aime_2025": ("AIME 2025", "math", "percent", 1, None),
+    # --- Anthropic Claude Fable 5.1 & Mythos 5.1 ---
+    "terminal_bench_science_0_1": ("Terminal-Bench-Science 0.1", "science", "percent", 1,
+                                  "https://www.anthropic.com/claude-fable-and-mythos-5-1"),
+    "terminal_bench_v4_0": ("Terminal-Bench v4.0", "agentic", "percent", 1,
+                            "https://www.anthropic.com/claude-fable-and-mythos-5-1"),
+    # --- Google Gemini 3.8 Flash ---
+    "cwe_bench": ("CWE-Bench", "security", "percent", 1, "https://cwe-bench.com/#leaderboard"),
 }
 
 # Benchmark ids already in the catalog that these sets reuse. Listed for review
@@ -705,6 +712,48 @@ LAUNCH_BENCHMARK_SETS: tuple[dict, ...] = (
             ("swe_bench_pro", "SWE-bench Pro", "percent", (53.0,), {}),
         ),
     },
+    {
+        "set_id": "anthropic_fable_5_1_card",
+        "source_id": "provider_blog",
+        "url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+        "published_at": "2026-09-01",
+        "columns": (
+            {"label": "Fable 5.1 (max)", "model_slug": "anthropic/claude-fable-5.1",
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "Mythos 5.1 (max)", "model_slug": "anthropic/claude-mythos-5.1",
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "Fable 5 (max)", "model_slug": None,
+             "condition": {"reasoning_effort": "max"}},
+        ),
+        "table_notes": (
+            "Self-reported benchmark evaluations from Anthropic announcement introducing "
+            "Claude Fable 5.1 and Claude Mythos 5.1. Scores reported at maximum reasoning effort.",
+        ),
+        "rows": (
+            ("terminal_bench_science_0_1", "Terminal-Bench-Science 0.1", "percent", (52.6, None, 24.7), {}),
+            ("terminal_bench_v4_0", "Terminal-Bench 4.0", "percent", (55.8, 60.9, None), {}),
+            ("hle", "Humanity's Last Exam (with tools)", "percent", (65.0, None, 63.8), {"tools": True}),
+            ("hle", "Humanity's Last Exam (no tools)", "percent", (60.9, None, 57.8), {"tools": False}),
+            ("cursorbench_v3_2", "CursorBench v3.2", "percent", (73.4, None, 70.5), {}),
+        ),
+    },
+    {
+        "set_id": "google_gemini_3_8_flash_evals",
+        "source_id": "provider_blog",
+        "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/3-8-flash-and-3-8-flash-cyber/",
+        "published_at": "2026-09-02",
+        "columns": (
+            {"label": "Gemini 3.8 Flash", "model_slug": "google/gemini-3.8-flash", "condition": {}},
+            {"label": "Gemini 3.8 Flash Cyber", "model_slug": "google/gemini-3.8-flash-cyber", "condition": {}},
+        ),
+        "table_notes": (
+            "Self-reported evaluations from Google announcement introducing Gemini 3.8 Flash and 3.8 Flash Cyber.",
+        ),
+        "rows": (
+            ("hle", "HLE-Verified", "percent", (54.9, None), {"verified": True}),
+            ("cwe_bench", "CWE-Bench (Pass@1)", "percent", (None, 47.2), {"metric": "pass@1"}),
+        ),
+    },
 )
 
 # Releases whose launch material publishes no numeric evals at all. Recorded so a
@@ -724,6 +773,14 @@ KNOWN_BENCHMARK_GAPS: tuple[dict[str, str], ...] = (
         "reason": "Only the Advanced Cybersecurity Completion Rate is printed. ExploitGym "
                   "and ExploitBench results appear as prose comparisons without values.",
         "revisit": "Ingest the promised GPT-5.6-Cyber system card when published.",
+    },
+    {
+        "canonical_slug": "moonshotai/kimi-k3",
+        "reason": "Moonshot AI announced Kimi K3 on July 16 with full weights released on July 27, "
+                  "referencing frontier-level performance competitively with Fable 5, but published "
+                  "detailed task evaluation numbers in ongoing technical blog reports. FrontierSWE v2 "
+                  "independently evaluates Kimi K3 at 25.9% mean@5.",
+        "revisit": "Ingest the formal Kimi K3 technical report evaluation table when published.",
     },
 )
 

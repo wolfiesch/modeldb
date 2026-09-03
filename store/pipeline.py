@@ -31,6 +31,7 @@ from store.artificial_analysis import promote_artificial_analysis
 from store.omp_speedtest import promote_omp_speedtest
 from store.vllm import promote_vllm
 from store.deepswe import promote_deepswe
+from store.frontierswe import promote_frontierswe
 from store.arena import promote_arena
 from store.capabilities import promote_capabilities
 from store.launch_registry import promote_launch_registry
@@ -44,6 +45,7 @@ M1_SOURCES = (
     "swebench",
     "aider",
     "deepswe",
+    "frontierswe",
     "openvlm",
     "bigcodebench",
     "vllm",
@@ -92,6 +94,7 @@ def run_pipeline(
         summary["open_llm_lb"] = promote_open_llm_lb(conn)
         summary["mteb"] = promote_mteb(conn)
         summary["deepswe"] = promote_deepswe(conn)
+        summary["frontierswe"] = promote_frontierswe(conn)
         summary["artificial_analysis"] = promote_artificial_analysis(conn)
         summary["omp_speedtest"] = promote_omp_speedtest(conn)
         summary["vllm"] = promote_vllm(conn)

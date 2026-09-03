@@ -18,12 +18,18 @@ ORG_SYNONYMS: dict[str, str] = {
     "meta-llama": "meta",
     "mistralai": "mistral",
     "mistral-ai": "mistral",
+    "moonshot-ai": "moonshotai",
+    "moonshot": "moonshotai",
     "open-ai": "openai",
     "openai": "openai",
     "qwenlm": "qwen",
     "qwen-team": "qwen",
+    "thinking-machines": "thinkingmachines",
     "x-ai": "xai",
     "xai": "xai",
+    "z-ai": "zhipuai",
+    "zhipu-ai": "zhipuai",
+    "zhipuai": "zhipuai",
 }
 
 _DATE_RE = re.compile(r"(?<!\d)(\d{4})(?:-?(\d{2})-?(\d{2}))(?!\d)")

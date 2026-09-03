@@ -38,6 +38,7 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
     ParserSpec("swebench", "ingest.sources.swebench", "SWEBenchParser"),
     ParserSpec("aider", "ingest.sources.aider", "AiderParser"),
     ParserSpec("deepswe", "ingest.sources.deepswe", "DeepSWEParser"),
+    ParserSpec("frontierswe", "ingest.sources.frontierswe", "FrontierSWEParser"),
     ParserSpec("livebench", "ingest.sources.livebench", "LiveBenchParser"),
     ParserSpec("open_llm_lb", "ingest.sources.open_llm_lb", "OpenLLMLBParser"),
     ParserSpec("openvlm", "ingest.sources.openvlm", "OpenVLMParser"),

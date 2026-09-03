@@ -782,6 +782,8 @@ def _org_hint(source_id: str, source_model_id: str,
         hf = parsed_fields.get("hugging_face_id")
         if not raw and hf and "/" in hf:
             raw = hf.split("/", 1)[0]
+    elif source_id == "frontierswe":
+        raw = parsed_fields.get("provider_name") or parsed_fields.get("developer_id")
     elif "/" in source_model_id:
         raw = source_model_id.split("/", 1)[0]
     return canonical_org(raw) if raw else None
