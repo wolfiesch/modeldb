@@ -90,7 +90,7 @@ class FrontierSWEParserTests(unittest.TestCase):
                 FrontierSWEParser().fetch()
             self.assertIn("FrontierSWE live fetch failed", str(ctx.exception))
 
-    def test_promotion_derives_measured_at_from_snapshot_fetched_at(self) -> None:
+    def test_promotion_leaves_measured_at_null_when_source_publishes_no_date(self) -> None:
         conn = sqlite3.connect(":memory:")
         schema_path = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
         conn.executescript(schema_path.read_text(encoding="utf-8"))
@@ -146,8 +146,10 @@ class FrontierSWEParserTests(unittest.TestCase):
             "SELECT measured_at, score, model_id FROM benchmark_result WHERE benchmark_id = 'frontierswe_v2'"
         ).fetchone()
         self.assertIsNotNone(row)
-        # Invariant: derived exactly from snapshot fetched_at date (2026-10-15), NOT hardcoded launch date
-        self.assertEqual(row[0], "2026-10-15")
+        # Invariant: measured_at is strictly source-provided per docs/SCHEMA.md:272.
+        # When the source publishes no measurement date, it must remain NULL rather than
+        # inventing dates from snapshot fetch time (source_snapshot_id already tracks fetch time).
+        self.assertIsNone(row[0])
         self.assertEqual(row[1], 56.3)
         self.assertEqual(row[2], 1)
 

@@ -86,7 +86,7 @@ def promote_frontierswe(conn: sqlite3.Connection) -> dict[str, int]:
     records = conn.execute(
         """
         SELECT smr.source_model_id, smr.source_snapshot_id, smr.raw_record_json,
-               smr.parsed_fields_json, ss.fetched_at
+               smr.parsed_fields_json
         FROM source_model_record smr
         JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
         WHERE ss.source_id = ?
@@ -99,7 +99,7 @@ def promote_frontierswe(conn: sqlite3.Connection) -> dict[str, int]:
     unlinked = 0
     skipped = 0
 
-    for source_model_id, source_snapshot_id, raw_record_json, parsed_fields_json, fetched_at in records:
+    for source_model_id, source_snapshot_id, raw_record_json, parsed_fields_json in records:
         if not parsed_fields_json:
             skipped += 1
             continue
@@ -122,9 +122,6 @@ def promote_frontierswe(conn: sqlite3.Connection) -> dict[str, int]:
                 linked += 1
 
             measured_at = parsed_fields.get("measured_at")
-            if not measured_at and fetched_at:
-                measured_at = str(fetched_at)[:10]
-
             conn.execute(
                 """
                 INSERT INTO benchmark_result
