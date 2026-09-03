@@ -135,6 +135,12 @@ BENCHMARK_CATALOG: dict[str, tuple[str, str | None, str, int, str | None]] = {
                             "https://www.anthropic.com/claude-fable-and-mythos-5-1"),
     # --- Google Gemini 3.8 Flash ---
     "cwe_bench": ("CWE-Bench", "security", "percent", 1, "https://cwe-bench.com/#leaderboard"),
+    # --- OpenAI GPT-6 Astra ---
+    "sre_bench": ("SRE-Bench", "coding", "percent", 1,
+                  "https://thenewstack.io/openai-gpt6-astra-benchmarks/"),
+    "auto_review_circumvention_internal": (
+        "Auto-review circumvention (internal)", "safety", "percent", 0,
+        "https://thenewstack.io/openai-gpt6-astra-benchmarks/"),
 }
 
 # Benchmark ids already in the catalog that these sets reuse. Listed for review
@@ -145,6 +151,8 @@ REUSED_BENCHMARK_IDS = (
     "swe_bench_verified", "gpqa_diamond", "mmlu_pro", "scicode",
     "terminalbench_v2_1", "toolathlon", "agents_last_exam", "automationbench",
     "mmmu_pro", "healthbench", "browsecomp", "hle", "ifbench", "lcr",
+    "arc_agi_3", "frontiermath_tier_4_v2", "benchcad", "gene_bench_pro",
+    "medchem_bench_internal", "healthbench_professional", "exploitbench",
 )
 
 # ---------------------------------------------------------------------------
@@ -752,6 +760,64 @@ LAUNCH_BENCHMARK_SETS: tuple[dict, ...] = (
         "rows": (
             ("hle", "HLE-Verified", "percent", (54.9, None), {"verified": True}),
             ("cwe_bench", "CWE-Bench (Pass@1)", "percent", (None, 47.2), {"metric": "pass@1"}),
+        ),
+    },
+    {
+        "set_id": "openai_gpt_6_astra_announcement",
+        "source_id": "provider_blog",
+        "url": "https://x.com/scaling01/status/2095579734813937942",
+        "published_at": "2026-09-03",
+        "columns": (
+            {"label": "GPT-6 Astra", "model_slug": "openai/gpt-6-astra",
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "GPT-5.6 Sol", "model_slug": "openai/gpt-5.6-sol",
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "Claude Fable 5.1", "model_slug": "anthropic/claude-fable-5-1",
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "Claude Fable 5", "model_slug": None,
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "Claude Opus 5", "model_slug": "anthropic/claude-opus-5",
+             "condition": {"reasoning_effort": "max"}},
+            {"label": "Gemini 3.8 Flash", "model_slug": "google/gemini-3.8-flash",
+             "condition": {}},
+        ),
+        "table_notes": (
+            "Primary launch evaluation table for GPT-6 Astra announced September 3, 2026. "
+            "Evaluations reported at maximum reasoning effort unless noted. ARC-AGI-3 measured "
+            "with Responses API harness retaining reasoning and using compaction across turns. "
+            "BenchCAD measured on Vision2Code subset with Python tools. HealthBench Professional "
+            "scores are length-adjusted. Auto-review circumvention is an internal safety evaluation "
+            "where lower is better. ExploitBench and SRE-Bench reflect cybersecurity and systems reliability.",
+        ),
+        "rows": (
+            ("arc_agi_3", "ARC-AGI-3", "percent", (98.6, 7.8, None, None, 30.2, None),
+             {"harness": "responses_api", "inter_turn_reasoning": True}),
+            ("frontiermath_tier_4_v2", "FrontierMath Tier 4 (v2)", "percent", (97.6, 83.0, 87.8, 87.8, 73.2, None),
+             {"tier": "4_v2"}),
+            ("agents_last_exam", "Agents' Last Exam", "percent", (59.3, 52.7, None, 48.7, 52.7, None),
+             {}),
+            ("automationbench", "AutomationBench", "percent", (41.4, 18.1, 31.4, 17.4, 26.9, None),
+             {}),
+            ("benchcad", "BenchCAD", "percent", (95.9, 83.3, 84.3, 67.5, 82.1, None),
+             {"subset": "vision2code", "tools": "python"}),
+            ("deepswe", "DeepSWE v1.1", "percent", (74.1, 70.8, 67.4, 69.9, 68.8, 73.7),
+             {"version": "1.1"}),
+            ("terminal_bench_science_0_1", "Terminal-Bench Science 0.1", "percent", (64.6, 22.4, 52.6, 24.7, 29.0, None),
+             {}),
+            ("gpqa_diamond", "GPQA Diamond", "percent", (96.0, 94.6, 93.7, 92.6, 93.2, 95.3),
+             {}),
+            ("gene_bench_pro", "GeneBench Pro", "percent", (39.0, 28.7, None, None, None, None),
+             {}),
+            ("medchem_bench_internal", "MedChemBench (internal)", "percent", (49.7, 47.4, None, None, None, None),
+             {"inhouse": True}),
+            ("healthbench_professional", "HealthBench Professional", "percent", (63.4, 60.5, 56.6, 60.9, 57.5, 52.1),
+             {"length_adjusted": True}),
+            ("exploitbench", "ExploitBench", "percent", (100.0, 78.5, None, None, 70.0, None),
+             {}),
+            ("sre_bench", "SRE-Bench (four attempts)", "percent", (99.2, 68.7, None, None, None, None),
+             {"attempts": 4}),
+            ("auto_review_circumvention_internal", "Auto-review circumvention (internal)", "percent", (0.0, 0.29, None, None, None, None),
+             {"inhouse": True, "higher_is_better": False}),
         ),
     },
 )
