@@ -311,7 +311,7 @@ class SpineDedupCollisionTests(unittest.TestCase):
         canonical_rows = self.conn.execute(
             "SELECT id, canonical_slug FROM model ORDER BY canonical_slug"
         ).fetchall()
-        self.assertEqual(canonical_rows, [(1, "thinkingmachines/thinkingmachines/Inkling")])
+        self.assertEqual(canonical_rows, [(1, "thinkingmachines/Inkling")])
         variant_alias = self.conn.execute(
             """
             SELECT alias_kind, model_id
@@ -366,7 +366,16 @@ class SpineDedupCollisionTests(unittest.TestCase):
         self.assertEqual(summary["models_created"], 1)
         self.assertEqual(
             self.conn.execute("SELECT canonical_slug FROM model").fetchall(),
-            [("thinkingmachines/thinkingmachines/Inkling",)],
+            [("thinkingmachines/Inkling",)],
+        )
+        # The host-prefixed catalog spelling survives as an alias, not a slug.
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT alias_kind FROM model_alias "
+                "WHERE source_id = 'models_dev' "
+                  "AND alias_string = 'thinkingmachines/thinkingmachines/Inkling'"
+            ).fetchone(),
+            ("api_model_id",),
         )
 
 

@@ -75,6 +75,14 @@ def first_party_provider_id(provider_id: str) -> str:
 def canonical_slug_for(source_model_id: str) -> str:
     """Canonical slug for a first-party models.dev id, namespace-normalized."""
     provider_id, _, model_part = source_model_id.partition("/")
+    nested_creator, nested_sep, nested_rest = model_part.partition("/")
+    if nested_sep and is_first_party_provider(nested_creator):
+        # Nested ids carry the creator namespace inside the model path
+        # (`thinkingmachines/thinkingmachines/Inkling`,
+        # `poolside/poolside/laguna-m.1`). Canonical identity is the
+        # creator-canonical `creator/model` slug — never a 3-segment
+        # host-prefixed one; the host string attaches as an alias instead.
+        return f"{canonical_org(nested_creator)}/{nested_rest}"
     developer_provider = first_party_provider_id(provider_id)
     if not model_part or developer_provider == provider_id:
         return source_model_id
@@ -543,8 +551,19 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
             continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
 
-        developer_provider = first_party_provider_id(provider_id)
         canonical_slug = canonical_slug_for(source_model_id)
+
+        if canonical_slug.count("/") > 1:
+            # Nested namespace we cannot attribute to a first-party creator
+            # (`host/other-org/model`): minting verbatim would break the locked
+            # `{developer}/{family}-{variant}` slug format. Keep the record as
+            # an alias fact via the re-export path below.
+            resold_specs.append(source_model_id)
+            continue
+        # The leading canonical_slug segment is always the creator: nested ids
+        # are creator-stripped in canonical_slug_for, and namespace-mapped
+        # slugs (`alibaba-cn/...` -> `alibaba/...`) carry the developer.
+        developer_provider = canonical_slug.partition("/")[0]
         developer_id = canonical_org(developer_provider)
         release_date = pf.get("release_date")
         snapshot_date = release_date  # models.dev release_date is the dated snapshot
@@ -711,7 +730,8 @@ def _suffix_reductions(identity: str) -> list[str]:
 
 
 def link_model(conn: sqlite3.Connection, *, source_id: str,
-               source_model_id: str, parsed_fields: dict[str, Any]) -> int | None:
+               source_model_id: str, parsed_fields: dict[str, Any],
+               exclude_model_id: int | None = None) -> int | None:
     """Return the canonical model_id for a source record, or None.
 
     Multi-pass, most-confident first:
@@ -719,6 +739,9 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
       2. normalized full form (provider/model)
       3. normalized bare model form (strip provider)
       4. Epoch-style: strip effort/quant modifiers (`_max`,`-high`,`fp8`) then bare match
+
+    ``exclude_model_id`` skips a model's own aliases (used by the namespace
+    repair so a multi-slash shell does not resolve onto itself).
     """
     # 1. exact alias hit. Artificial Analysis rows are third-party UUIDs or
     # provider-scoped names, so they must not resolve through bare display aliases
@@ -726,7 +749,8 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
     if source_id != "artificialanalysis":
         row = conn.execute(
             "SELECT model_id FROM model_alias WHERE alias_string = ? AND model_id IS NOT NULL "
-            "ORDER BY confidence DESC LIMIT 1", (source_model_id,)).fetchone()
+            "AND (model_id IS NOT ?) "
+            "ORDER BY confidence DESC LIMIT 1", (source_model_id, exclude_model_id)).fetchone()
         if row:
             return int(row[0])
 
@@ -760,6 +784,8 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
             "JOIN model m ON m.id = ma.model_id "
             "WHERE ma.alias_normalized = ? AND ma.model_id IS NOT NULL "
             "ORDER BY ma.confidence DESC", (cand,)).fetchall()
+        if exclude_model_id is not None:
+            matches = [match for match in matches if match[0] != exclude_model_id]
         if not matches:
             continue
         if org_hint:

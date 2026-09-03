@@ -329,6 +329,11 @@ def _accept_new_model_row(conn: sqlite3.Connection, review: dict[str, Any]) -> d
 
     if not canonical_slug.startswith(f"{developer_id}/"):
         raise ValueError("approval.canonical_slug must start with approval.developer_id + '/'")
+    if canonical_slug.count("/") > 1:
+        raise ValueError(
+            "approval.canonical_slug must match the locked {developer}/{family}-{variant}"
+            " format; record host-prefixed provider ids as aliases instead"
+        )
 
     existing = conn.execute("SELECT id FROM model WHERE canonical_slug = ?", (canonical_slug,)).fetchone()
     if existing is not None:
