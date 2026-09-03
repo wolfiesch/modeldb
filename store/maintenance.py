@@ -11,11 +11,13 @@ only get their `valid_to` bounded by the newer observation that overlaps them.
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 from ingest.base import DB_PATH, connect
+from store.spine import link_model
 
 
 def dedup_benchmark_results(conn: sqlite3.Connection) -> int:
@@ -78,17 +80,68 @@ def cap_overlapping_price_windows(conn: sqlite3.Connection) -> int:
                 capped += cursor.rowcount
     return capped
 
+def relink_unlinked_benchmarks(conn: sqlite3.Connection) -> int:
+    """Attempt to resolve and link benchmark_result rows whose model_id is NULL.
 
-def run_maintenance(db_path: str | Path = DB_PATH) -> dict[str, int]:
-    """Run every maintenance task against db_path and commit once at the end."""
+    Uses `store.spine.link_model` against each row's source_snapshot.source_id and
+    eval_condition_json / raw_record_json metadata. Idempotent: rows that already
+    have model_id are untouched, and unresolvable rows remain NULL.
+    """
+    rows = conn.execute(
+        """
+        SELECT br.id, ss.source_id, br.eval_condition_json
+        FROM benchmark_result br
+        JOIN source_snapshot ss ON ss.id = br.source_snapshot_id
+        WHERE br.model_id IS NULL
+        """
+    ).fetchall()
+    linked = 0
+    for br_id, source_id, cond_json in rows:
+        try:
+            cond = json.loads(cond_json) if cond_json else {}
+        except (ValueError, TypeError):
+            continue
+        source_model_id = (
+            cond.get("source_model_id")
+            or cond.get("model_name")
+            or cond.get("slug")
+            or ""
+        )
+        m_id = link_model(
+            conn,
+            source_id=source_id,
+            source_model_id=source_model_id,
+            parsed_fields=cond,
+        )
+        if m_id is not None:
+            conn.execute(
+                "UPDATE benchmark_result SET model_id = ? WHERE id = ?",
+                (m_id, br_id),
+            )
+            linked += 1
+    return linked
+
+
+def run_maintenance(
+    db_path: str | Path = DB_PATH,
+    *,
+    dedup: bool = True,
+    relink: bool = False,
+) -> dict[str, int]:
+    """Run requested maintenance tasks against db_path and commit once at the end."""
     db_file = Path(db_path)
-    with closing(connect(db_file)) as conn, conn:
-        benchmark_duplicates_removed = dedup_benchmark_results(conn)
-        price_windows_capped = cap_overlapping_price_windows(conn)
-    return {
-        "benchmark_duplicates_removed": benchmark_duplicates_removed,
-        "price_windows_capped": price_windows_capped,
+    result = {
+        "benchmark_duplicates_removed": 0,
+        "price_windows_capped": 0,
+        "benchmarks_relinked": 0,
     }
+    with closing(connect(db_file)) as conn, conn:
+        if dedup:
+            result["benchmark_duplicates_removed"] = dedup_benchmark_results(conn)
+            result["price_windows_capped"] = cap_overlapping_price_windows(conn)
+        if relink:
+            result["benchmarks_relinked"] = relink_unlinked_benchmarks(conn)
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -100,17 +153,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dedup-facts", action="store_true",
                         help="remove exact duplicate benchmark_result rows and cap "
                              "superseded overlapping price_component windows")
+    parser.add_argument("--relink-benchmarks", action="store_true",
+                        help="attempt to resolve and link benchmark_result rows whose model_id is NULL")
+    parser.add_argument("--all", action="store_true",
+                        help="run all maintenance tasks (dedup-facts and relink-benchmarks)")
     args = parser.parse_args(argv)
 
-    if not args.dedup_facts:
-        parser.error("no task requested; pass --dedup-facts")
+    if not (args.dedup_facts or args.relink_benchmarks or args.all):
+        parser.error("no task requested; pass --dedup-facts, --relink-benchmarks, or --all")
 
-    result = run_maintenance(args.db)
-    print(
-        f"maintenance: removed {result['benchmark_duplicates_removed']} duplicate "
-        f"benchmark_result row(s), capped {result['price_windows_capped']} "
-        f"overlapping price window(s); database={args.db}"
-    )
+    dedup = args.dedup_facts or args.all
+    relink = args.relink_benchmarks or args.all
+
+    result = run_maintenance(args.db, dedup=dedup, relink=relink)
+    parts = []
+    if dedup:
+        parts.append(
+            f"removed {result['benchmark_duplicates_removed']} duplicate benchmark_result row(s), "
+            f"capped {result['price_windows_capped']} overlapping price window(s)"
+        )
+    if relink:
+        parts.append(f"relinked {result['benchmarks_relinked']} benchmark_result row(s)")
+    summary = "; ".join(parts)
+    print(f"maintenance: {summary}; database={args.db}")
     return 0
 
 

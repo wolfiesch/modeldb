@@ -206,7 +206,41 @@ class MaintenanceDedupFactsTests(unittest.TestCase):
                 "(SELECT COUNT(*) FROM source_snapshot), (SELECT COUNT(*) FROM source)"
             ).fetchone()
         self.assertEqual(before, after)
+    def test_relink_connects_unlinked_row_to_model(self) -> None:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO model_alias (model_id, alias_string, alias_normalized, alias_kind, confidence, source_id, first_seen_at, last_seen_at) "
+                "VALUES (1, 'gpt-5', 'gpt-5', 'bare_name', 1.0, 'epoch', '2026-08-01', '2026-08-01')"
+            )
+        r_id = self._insert_result(score=0.88, model_id=None, eval_condition='{"model_version":"gpt-5"}')
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            self.assertIsNone(conn.execute("SELECT model_id FROM benchmark_result WHERE id = ?", (r_id,)).fetchone()[0])
 
+        result = run_maintenance(self.db_path, dedup=False, relink=True)
+        self.assertEqual(result["benchmarks_relinked"], 1)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            self.assertEqual(conn.execute("SELECT model_id FROM benchmark_result WHERE id = ?", (r_id,)).fetchone()[0], 1)
+
+        # Idempotent second run
+        result2 = run_maintenance(self.db_path, dedup=False, relink=True)
+        self.assertEqual(result2["benchmarks_relinked"], 0)
+
+    def test_cli_relink_benchmarks_and_all_flags(self) -> None:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "INSERT INTO model_alias (model_id, alias_string, alias_normalized, alias_kind, confidence, source_id, first_seen_at, last_seen_at) "
+                "VALUES (1, 'gpt-5', 'gpt-5', 'bare_name', 1.0, 'epoch', '2026-08-01', '2026-08-01')"
+            )
+        self._insert_result(score=0.88, model_id=None, eval_condition='{"model_version":"gpt-5"}')
+        self._insert_result(score=0.71)
+        self._insert_result(score=0.71)
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["--db", str(self.db_path), "--all"])
+        self.assertEqual(code, 0)
+        self.assertIn("removed 1 duplicate benchmark_result row(s)", stdout.getvalue())
+        self.assertIn("relinked 1 benchmark_result row(s)", stdout.getvalue())
 
 if __name__ == "__main__":
     unittest.main()

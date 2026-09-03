@@ -36,6 +36,7 @@ from store.arena import promote_arena
 from store.capabilities import promote_capabilities
 from store.launch_registry import promote_launch_registry
 from store.launch_benchmarks import promote_launch_benchmarks
+from store.maintenance import relink_unlinked_benchmarks
 
 M1_SOURCES = (
     "models_dev",
@@ -105,6 +106,7 @@ def run_pipeline(
         summary["omp_speedtest"] = promote_omp_speedtest(conn)
         summary["vllm"] = promote_vllm(conn)
         summary["launch_benchmarks"] = promote_launch_benchmarks(conn)
+        summary["relink"] = relink_unlinked_benchmarks(conn)
         conn.commit()
     return summary
 
