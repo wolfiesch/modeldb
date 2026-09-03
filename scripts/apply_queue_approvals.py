@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import sqlite3
 import subprocess
@@ -109,7 +110,10 @@ def _next_backup_path(backup_dir: Path, label: str) -> Path:
 
 
 def _backup_label_from_timestamp() -> str:
-    timestamp = subprocess.check_output([str(TIMESTAMP_HELPER)], text=True).strip()
+    if TIMESTAMP_HELPER.exists():
+        timestamp = subprocess.check_output([str(TIMESTAMP_HELPER)], text=True).strip()
+    else:
+        timestamp = datetime.now(timezone.utc).isoformat()
     sanitized = "".join(char if char.isalnum() else "-" for char in timestamp)
     return "-".join(part for part in sanitized.split("-") if part)
 
