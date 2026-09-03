@@ -5,7 +5,7 @@ import { LabLogo } from '../components/LabLogo'
 import { labSearchValues } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
-import { fmtElo } from '../lib/format'
+import { fmtBenchmarkScore, fmtElo } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 
 const loadOverallElo = () => loadElo('text_overall')
@@ -28,6 +28,7 @@ interface SharedScore {
   label: string
   a: number
   b: number
+  metric: string | null
   aSelfReported: number
   bSelfReported: number
 }
@@ -47,10 +48,6 @@ function formatNumber(value: number | null | undefined, digits = 2) {
   return value.toFixed(digits).replace(/\.00$/, '')
 }
 
-function formatScore(value: number | null | undefined) {
-  if (value == null) return EMPTY_VALUE
-  return String(Math.round(value))
-}
 
 function formatPrice(value: number | null | undefined) {
   if (value == null) return EMPTY_VALUE
@@ -191,6 +188,7 @@ export default function Compare() {
         label: benchmarkLabel(id),
         a: score.score,
         b: modelB.scores[id].score,
+        metric: score.metric ?? modelB.scores[id].metric,
         aSelfReported: score.selfReported,
         bSelfReported: modelB.scores[id].selfReported,
       }))
@@ -268,8 +266,8 @@ export default function Compare() {
         label: 'LMArena text overall',
         a: modelA.scores.lmarena_text_overall?.score ?? null,
         b: modelB.scores.lmarena_text_overall?.score ?? null,
-        displayA: formatScore(modelA.scores.lmarena_text_overall?.score),
-        displayB: formatScore(modelB.scores.lmarena_text_overall?.score),
+        displayA: fmtElo(modelA.scores.lmarena_text_overall?.score),
+        displayB: fmtElo(modelB.scores.lmarena_text_overall?.score),
         mode: 'higher',
       },
       {
@@ -277,8 +275,8 @@ export default function Compare() {
         label: 'LMArena text coding',
         a: modelA.scores.lmarena_text_coding?.score ?? null,
         b: modelB.scores.lmarena_text_coding?.score ?? null,
-        displayA: formatScore(modelA.scores.lmarena_text_coding?.score),
-        displayB: formatScore(modelB.scores.lmarena_text_coding?.score),
+        displayA: fmtElo(modelA.scores.lmarena_text_coding?.score),
+        displayB: fmtElo(modelB.scores.lmarena_text_coding?.score),
         mode: 'higher',
       },
     ]
@@ -304,7 +302,22 @@ export default function Compare() {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        valueFormatter: (value: number) => formatNumber(value),
+        formatter: (
+          params: Array<{
+            axisValueLabel?: string
+            dataIndex: number
+            marker: string
+            seriesName: string
+            value: number
+          }>,
+        ) => {
+          const title = params[0]?.axisValueLabel
+          const values = params.map((param) => {
+            const row = rows[param.dataIndex]
+            return `${param.marker}${param.seriesName}: ${fmtBenchmarkScore(param.value, row?.metric)}`
+          })
+          return [title, ...values].filter(Boolean).join('<br/>')
+        },
       },
       series: [
         {
@@ -552,8 +565,8 @@ export default function Compare() {
                       className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md border border-neutral-800/70 px-3 py-2"
                     >
                       <div className="text-neutral-300">{score.label}</div>
-                      <ScoreCell value={score.a} selfReported={score.aSelfReported} />
-                      <ScoreCell value={score.b} selfReported={score.bSelfReported} />
+                      <ScoreCell value={score.a} metric={score.metric} selfReported={score.aSelfReported} />
+                      <ScoreCell value={score.b} metric={score.metric} selfReported={score.bSelfReported} />
                     </div>
                   ))}
                 </div>
@@ -676,10 +689,18 @@ function ModelPicker({
   )
 }
 
-function ScoreCell({ value, selfReported }: { value: number; selfReported: number }) {
+function ScoreCell({
+  value,
+  metric,
+  selfReported,
+}: {
+  value: number
+  metric: string | null
+  selfReported: number
+}) {
   return (
     <div className="flex items-center gap-1.5 text-right tabular-nums text-neutral-300">
-      <span>{formatNumber(value)}</span>
+      <span>{fmtBenchmarkScore(value, metric)}</span>
       {selfReported === 1 && (
         <span className="rounded border border-amber-500/50 bg-amber-950/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-300">
           self

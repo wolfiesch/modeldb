@@ -1,32 +1,22 @@
-# React + TypeScript + Vite
+# ModelDB dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Static React dashboard for ModelDB, published at [models.wolfie.gg](https://models.wolfie.gg). A Python/SQLite pipeline extracts typed JSON snapshots; this app renders them with React 19, TypeScript, Tailwind, and ECharts. There are no composite rankings — every displayed number stays source-attributable.
 
-Currently, two official plugins are available:
+## Data
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+All page data comes from `public/data/*.json` (`models.json`, `benchmarks.json`, `prices.json`, `meta.json`, …) written by `dashboard/scripts/extract.mjs` from the ModelDB SQLite database. In production these files refresh daily on the server without rebuilding the app, so the client never assumes build-time data: `fetchJson` revalidates with `cache: 'no-cache'`, `meta.json` carries `generatedAt` plus row counts, and the meta description's model count is injected at runtime.
 
-## React Compiler
+## Scripts
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From the repository root:
 
-## Expanding the Oxlint configuration
+- `bun run dash:extract` — regenerate `public/data/*.json` from the local database
+- `bun run dash:dev` — Vite dev server with HMR
+- `bun run dash:build` — extract data, then typecheck and build the production bundle
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+From `dashboard/`:
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+- `bun test` — run unit tests (colocated `src/**/*.test.ts`, Bun test runner)
+- `bun run lint` — oxlint
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+See the repository root README for the ingestion pipeline, refresh automation, and deployment details.

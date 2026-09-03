@@ -4,7 +4,7 @@ import ChartState, { resolveChartStatus } from '../components/ChartState'
 import { EvidenceInspector } from '../components/EvidenceInspector'
 import { loadBenchmarks, loadModels, useData } from '../lib/data'
 import type { BenchmarkResult } from '../lib/data'
-import { fmtCount, fmtElo, fmtScore } from '../lib/format'
+import { fmtBenchmarkScore, fmtCount } from '../lib/format'
 import { labLabel } from '../lib/labs'
 import { colorForDark } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
@@ -14,9 +14,10 @@ const DEFAULT_BENCHMARK_ID = 'swe_bench_verified'
 
 const FEATURED_BENCHMARK_PRIORITY: Record<string, number> = {
   deepswe: 0,
-  swe_bench_verified: 1,
-  lmarena_text_coding: 2,
-  aider_polyglot: 3,
+  frontierswe_v2: 1,
+  swe_bench_verified: 2,
+  lmarena_text_coding: 3,
+  aider_polyglot: 4,
 }
 
 const FEATURED_BENCHMARK_FALLBACK_PRIORITY = Object.keys(FEATURED_BENCHMARK_PRIORITY).length
@@ -49,10 +50,10 @@ export default function Benchmarks() {
     })
   }, [benchmarks])
   const modelById = useMemo(() => new Map((models ?? []).map((m) => [m.id, m])), [models])
-  const formatBenchmarkScore = useMemo(() => {
-    const metric = `${bench?.id ?? ''} ${bench?.metricDefault ?? ''}`.toLowerCase()
-    return metric.includes('elo') ? fmtElo : fmtScore
-  }, [bench])
+  const formatBenchmarkScore = useMemo(
+    () => (value: number | null | undefined) => fmtBenchmarkScore(value, bench?.metricDefault),
+    [bench?.metricDefault],
+  )
 
   // Latest result per model (results are ordered by measured_at asc).
   const latest = useMemo(() => {
@@ -67,7 +68,7 @@ export default function Benchmarks() {
           map.set(m.id, {
             modelId: m.id,
             score: s.score,
-            metric: null,
+            metric: s.metric,
             rank: s.rank,
             selfReported: s.selfReported,
             measuredAt: s.measuredAt,
@@ -99,9 +100,8 @@ export default function Benchmarks() {
         formatter: (p: { dataIndex: number }) => {
           const r = rows[p.dataIndex]
           const m = modelById.get(r.modelId)
-          return `<b>${m?.name ?? r.modelId}</b><br/>${labLabel(m?.dev)}<br/>${formatBenchmarkScore(r.score)}${
-            r.selfReported === 1 ? ' · self-reported' : ''
-          }`
+          return `<b>${m?.name ?? r.modelId}</b><br/>${labLabel(m?.dev)}<br/>${formatBenchmarkScore(r.score)}${r.selfReported === 1 ? ' · self-reported' : ''
+            }`
         },
       },
       series: [
@@ -210,15 +210,14 @@ export default function Benchmarks() {
           <button
             key={b.id}
             onClick={() => setBenchId(b.id)}
-            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
-              benchId === b.id
+            className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${benchId === b.id
                 ? b.id === 'deepswe'
                   ? 'border-cyan-300 bg-cyan-950 text-cyan-50'
                   : 'border-neutral-300 bg-neutral-800 text-white'
                 : b.id === 'deepswe'
                   ? 'border-cyan-800 text-cyan-300 hover:border-cyan-500'
                   : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
-            }`}
+              }`}
           >
             <span>{b.name}</span>
             {b.id === 'deepswe' ? (

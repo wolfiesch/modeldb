@@ -54,17 +54,35 @@ def main(argv: list[str] | None = None) -> int:
         *[model["ompSelector"] for model in models],
     ]
     completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
-    if completed.returncode != 0:
+    speedtest = _parse_speedtest(completed.stdout)
+    degraded = completed.returncode != 0
+    if degraded:
         error_payload = {
             "returncode": completed.returncode,
             "stdout": completed.stdout,
             "stderr": completed.stderr,
             "command": command,
         }
-        (artifact_dir / "error.json").write_text(json.dumps(error_payload, indent=2), encoding="utf-8")
-        return completed.returncode
+        error_path = artifact_dir / "error.json"
+        error_path.write_text(json.dumps(error_payload, indent=2), encoding="utf-8")
+        failed = [
+            str(entry.get("model"))
+            for entry in (speedtest or {}).get("models", [])
+            if isinstance(entry, dict) and entry.get("failures")
+        ]
+        print(
+            f"omp speedtest exited {completed.returncode}; failing selectors: "
+            f"{', '.join(failed) if failed else 'unknown'} (evidence: {error_path})",
+            file=sys.stderr,
+        )
+        if not _has_samples(speedtest):
+            print("no usable TPS samples in this run; skipping promotion", file=sys.stderr)
+            return completed.returncode
+        print("promoting partial TPS samples from the selectors that responded", file=sys.stderr)
+    elif not _has_samples(speedtest):
+        print("omp speedtest returned no usable TPS samples", file=sys.stderr)
+        return 1
 
-    speedtest = json.loads(completed.stdout)
     artifact_path = f".perf/omp-tps/{run_id}/payload.json"
     payload = {
         "runId": run_id,
@@ -78,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         "artifactPath": artifact_path,
         "models": models,
         "speedtest": speedtest,
+        "degraded": degraded,
     }
     raw = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
     (artifact_dir / "payload.json").write_bytes(raw)
@@ -94,6 +113,25 @@ def main(argv: list[str] | None = None) -> int:
         conn.commit()
     print(json.dumps(summary, sort_keys=True))
     return 0
+
+
+def _parse_speedtest(stdout: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _has_samples(speedtest: dict[str, Any] | None) -> bool:
+    if not speedtest:
+        return False
+    return any(
+        entry.get("okRuns")
+        for entry in speedtest.get("models", [])
+        if isinstance(entry, dict)
+    )
+
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

@@ -100,6 +100,74 @@ A sensible coding policy from this evidence is:
 - Use **Luna high or xhigh** for high-volume triage and bounded changes.
 - Avoid assuming that Luna low is an economical coding configuration. Its 1.5% DeepSWE score makes the low sticker cost misleading.
 
+### The cost frontier changes when the task changes
+
+Artificial Analysis and DeepSWE expose the same five reasoning-effort settings, so their cost curves can be aligned by model and effort. This is a comparison of **frontier shape**, not a claim that the dollar figures are interchangeable. An Artificial Analysis Intelligence Index task and a DeepSWE repository task consume different token volumes, tools, and wall-clock work.
+
+In the table below, the Artificial Analysis values are approximate coordinates read from its published cost chart; DeepSWE values come from the machine-readable leaderboard stored in `modeldb`. “Frontier” means that no other GPT-5.6 configuration in the same benchmark is both cheaper and more capable.
+
+| Model and effort | AA cost / task | AA Intelligence | AA frontier | DeepSWE cost / task | DeepSWE resolved | DeepSWE frontier |
+|---|---:|---:|:---:|---:|---:|:---:|
+| Luna low | ~$0.04 | ~33.3 | Yes | $0.07 | 1.5% | Yes |
+| Luna medium | ~$0.05 | ~38.0 | Yes | $0.22 | 11.3% | Yes |
+| Luna high | ~$0.10 | ~46.0 | Yes | $0.78 | 44.2% | Yes |
+| Luna xhigh | ~$0.15 | ~49.0 | Yes | $1.54 | 56.9% | Yes |
+| Luna max | ~$0.21 | 51.1 | Yes | $3.03 | 67.2% | Yes |
+| Terra low | ~$0.10 | ~40.5 | No | $0.43 | 24.1% | Yes |
+| Terra medium | ~$0.13 | ~45.5 | No | $0.58 | 35.1% | Yes |
+| Terra high | ~$0.24 | ~49.0 | No | $1.13 | 53.8% | Yes |
+| Terra xhigh | ~$0.33 | ~51.5 | No | $2.13 | 60.2% | No |
+| Terra max | $0.55 | 55.0 | No | $4.95 | 69.6% | No |
+| Sol low | ~$0.20 | ~49.4 | Yes | $1.07 | 45.4% | Yes |
+| Sol medium | ~$0.31 | ~53.6 | Yes | $1.86 | 61.1% | Yes |
+| Sol high | ~$0.45 | ~55.8 | Yes | $3.47 | 69.4% | Yes |
+| Sol xhigh | ~$0.68 | ~57.7 | Yes | $4.70 | 70.7% | Yes |
+| Sol max | $1.04 | 58.9 | Yes | $8.39 | 72.7% | Yes |
+
+The combined view changes the routing conclusion:
+
+- **Broad intelligence favors a Luna-to-Sol router.** Every Terra point is dominated on the Artificial Analysis curve. Luna supplies the inexpensive half of the frontier, while Sol supplies the high-capability half.
+- **Repository engineering creates a real Terra niche.** Terra low, medium, and high lie on DeepSWE's family-level cost frontier. At high effort, Terra resolves 53.8% for $1.13. It fills the gap between Sol low at 45.4% for $1.07 and Luna xhigh at 56.9% for $1.54.
+- **Terra's expensive settings remain unattractive.** Sol medium beats Terra xhigh on both DeepSWE score and cost: 61.1% for $1.86 versus 60.2% for $2.13. Sol xhigh likewise beats Terra max: 70.7% for $4.70 versus 69.6% for $4.95.
+- **Reasoning effort is workload-sensitive.** Luna high gains roughly 33 DeepSWE points over Luna medium, while the corresponding Artificial Analysis increase is only about eight index points. Coding agents benefit disproportionately from additional search and interaction.
+
+The practical lesson is stronger than “use the cheapest model that reaches a target score.” A routing policy optimized on broad reasoning alone would skip Terra and miss three efficient coding configurations. Production routing needs separate frontiers for repository work, general reasoning, latency, and any private task family that materially affects cost.
+
+### Fast mode buys latency, not capability
+
+OpenAI's current Codex documentation does **not** list GPT-5.6 Sol, Terra, or Luna as Fast-mode models. As of this snapshot, Fast mode supports GPT-5.5 at 2.5 times its Standard credit rate and GPT-5.4 at 2 times its Standard rate. It runs the same model and reasoning setting about 1.5 times faster; OpenAI does not claim a quality increase. The GPT-5.6 comparisons below are therefore hypothetical “what if Fast cost 2.5x” calculations, not currently selectable Codex configurations.
+
+The Codex credit card makes the model-equivalence arithmetic simple:
+
+| Model | Input credits / 1M | Cached input credits / 1M | Output credits / 1M | Relative to Luna |
+|---|---:|---:|---:|---:|
+| Luna | 25 | 2.5 | 150 | 1x |
+| Terra | 62.5 | 6.25 | 375 | 2.5x |
+| Sol | 125 | 12.5 | 750 | 5x |
+
+At identical token usage, **hypothetical Luna Fast at 2.5x would cost exactly the same credits as Terra Standard**, not Sol Standard. Hypothetical Terra Fast would cost 1.25 times Sol Standard. The actual per-task equivalents can differ because a larger model or higher effort may generate a different number of reasoning and output tokens.
+
+For the user's concrete example, Luna high at a hypothetical 2.5x rate maps as follows:
+
+| Evidence source | Luna high at 2.5x cost | Similar-cost Standard configuration | Capability comparison |
+|---|---:|---|---|
+| Artificial Analysis Intelligence | ~$0.24/task | Terra high: ~$0.24 | Luna ~46 versus Terra ~49 |
+| DeepSWE | $1.94/task | Sol medium: $1.86 | Luna high 44.2% versus Sol medium 61.1% |
+
+So the answer is **no: Luna high Fast would not be as expensive as Sol high on a per-token basis**. It would equal Terra high Standard. On DeepSWE's measured task costs, however, 2.5 times Luna high lands near Sol medium because the evaluated agents consume different token volumes. Sol medium is 16.8 resolved points better and slightly cheaper, while Luna Fast would offer lower latency.
+
+The same pattern appears at high effort across the family:
+
+| Hypothetical 2.5x configuration | Multiplied DeepSWE cost | Similar-cost smarter Standard option | Score at 2.5x configuration | Smarter-option score |
+|---|---:|---|---:|---:|
+| Luna high Fast | $1.94 | Sol medium: $1.86 | 44.2% | 61.1% |
+| Terra high Fast | $2.84 | Luna max: $3.03 | 53.8% | 67.2% |
+| Sol high Fast | $8.67 | Sol max: $8.39 | 69.4% | 72.7% |
+
+If completion latency has no independent value, each smarter Standard configuration is the better purchase in these DeepSWE comparisons. Fast mode becomes rational when receiving the same result about 1.5 times sooner is worth more than the lost capability per credit. Examples include an interactive coding loop, an incident response, or a serial pipeline whose next step cannot begin until the model returns.
+
+API Priority processing is a separate product. GPT-5.6 Priority pricing is currently 2 times Standard, not 2.5 times, and is selected with `service_tier: "priority"`. At that multiplier, Luna high would cost about $1.56 on the DeepSWE trajectory, almost exactly Luna xhigh Standard at $1.54. Luna xhigh resolves 56.9% versus Luna high's 44.2%. For asynchronous work, evaluations, and batch processing, OpenAI recommends Standard rather than Priority.
+
 ## Finding 2: Sol reaches the general frontier without owning it
 
 Artificial Analysis gives Fable 5 a 59.9 Intelligence Index score and Sol 59.0. Sol therefore sits within one point of the leader. Artificial Analysis reports $1.04 per task for Sol max, approximately one-third of Fable 5's evaluated cost. It also reports 15,000 output tokens per task for Sol versus 16,000 for GPT-5.5, placing Sol on the intelligence-versus-output-token Pareto frontier.
@@ -254,7 +322,7 @@ This does not invalidate Sol's coding results. It changes what they can support.
 
 Terra is operationally attractive: half Sol's token price, 93% of Sol's AA Intelligence score, 96% of its AA Coding Agent score, and a near-tie with Fable 5 on DeepSWE. It may be the easiest single default for product design and rate-card simplicity.
 
-Pure economics give a more complicated answer. Artificial Analysis finds that Luna or Sol dominates every Terra effort level on intelligence versus cost. Grok 4.5 also scores 54 versus Terra's 55 at a lower evaluated cost per task and much lower output-token price. A router that can choose Luna for easy tasks and Sol for hard ones may beat a Terra-only policy.
+Pure economics give a workload-dependent answer. Artificial Analysis finds that Luna or Sol dominates every Terra effort level on intelligence versus cost, while DeepSWE places Terra low, medium, and high on the GPT-5.6 family cost frontier for repository engineering. Terra xhigh and max are dominated by Sol configurations on DeepSWE. Grok 4.5 also scores 54 versus Terra max's 55 at a lower evaluated Artificial Analysis cost per task and much lower output-token price. A router should therefore treat Terra as a coding-specific middle tier, not a universal compromise.
 
 ### Suggested routing policy
 
@@ -265,6 +333,7 @@ Pure economics give a more complicated answer. Artificial Analysis finds that Lu
 | Long-horizon implementation | Sol high or xhigh | Sol max |
 | Difficult math, abstract reasoning, cyber, research debugging | Sol xhigh | Sol max or ultra where available |
 | Broad low-cost agent workloads | Compare Luna with Grok 4.5 | Route failures to Sol |
+| Mid-cost repository engineering | Terra high or Luna xhigh | Sol medium or high |
 | Single-model product default | Benchmark Terra on private tasks | Keep a Sol escalation path |
 
 ## Methodology and limitations
@@ -301,6 +370,10 @@ The most defensible claim is therefore precise: **GPT-5.6 moves the coding-agent
 ## Sources
 
 - [OpenAI: GPT-5.6 launch post and comparison tables](https://openai.com/index/gpt-5-6/)
+- [OpenAI Codex: Fast-mode support and credit multipliers](https://learn.chatgpt.com/docs/agent-configuration/speed)
+- [OpenAI Codex: Model credit rate card](https://learn.chatgpt.com/docs/pricing)
+- [OpenAI API: Standard, Batch, Flex, and Priority pricing](https://developers.openai.com/api/docs/pricing)
+- [OpenAI API: Priority processing behavior](https://developers.openai.com/api/docs/guides/priority-processing)
 - [Artificial Analysis: GPT-5.6 benchmarks across intelligence, speed, and cost](https://artificialanalysis.ai/articles/gpt-5-6-has-landed)
 - [Artificial Analysis: Grok 4.5 frontier analysis](https://artificialanalysis.ai/articles/grok-4-5-brings-spacexai-to-the-the-intelligence-frontier)
 - [DeepSWE leaderboard and benchmark description](https://deepswe.datacurve.ai/)

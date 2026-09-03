@@ -1,0 +1,1538 @@
+"""Curated launch-window identity for releases no first-party catalog lists yet.
+
+`store.spine.build_spine` mints canonical identity only from first-party
+models.dev namespaces. That gate keeps re-export spellings out of the spine, but
+it also means a flagship release stays invisible for days or weeks while only
+aggregators (OpenRouter, Vercel, Kilo, Chutes, Fireworks) carry it - and models
+that never enter a token-API catalog at all (limited-access pilots, pure
+open-weight drops) would never appear.
+
+This module closes that window the way the new-model-drop rule prescribes: add
+the model now with explicit provenance and confidence, then let the normal
+promotion path enrich it as snapshots arrive. Each entry:
+
+  1. persists its textually-confirmed facts as a `provider_blog` snapshot,
+  2. mints the canonical `model` row when missing (idempotent on canonical_slug),
+  3. attaches the aliases every downstream promoter matches on - provider ids,
+     bare names, display names, Hugging Face repo ids.
+
+Benchmark NUMBERS quoted in an announcement stay inside the evidence payload.
+They are self-reported and frequently image-only, so they never become
+`benchmark_result` rows here; independent aggregators supply those with their own
+provenance.
+
+An entry stays only until a first-party catalog covers the release. Once
+models.dev lists it, `build_spine` dedupes on `canonical_slug` and the entry
+becomes a no-op that only keeps the announcement evidence attached.
+
+Usage:
+    python -m store.launch_registry
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+from typing import Any
+
+from ingest.base import connect, utcnow
+from resolve.normalize import normalize_alias
+from store.announcement import capture_announcement
+from store.spine import _ensure_org, _write_alias
+
+# Each entry: identity for the `model` row, `aliases` for resolution, and
+# `evidence` for the provider_blog snapshot. `evidence` must carry `source_url`.
+LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
+    {
+        "canonical_slug": "anthropic/claude-sonnet-5",
+        "display_name": "Claude Sonnet 5",
+        "developer_id": "anthropic",
+        "family": "claude-sonnet",
+        "generation": "5",
+        "tier_or_variant": "sonnet",
+        "training_role": "reasoning",
+        "release_date": "2026-06-30",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("claude-sonnet-5", "bare_name"),
+            ("anthropic/claude-sonnet-5", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://www.anthropic.com/news/claude-sonnet-5",
+            "release_date": "2026-06-30",
+            "positioning": "most agentic Sonnet yet; performance close to Opus 4.8 at "
+                           "lower price; improvement over Sonnet 4.6 on "
+                           "reasoning/tool-use/coding.",
+            "pricing_intro": {"input_per_1m": 2, "output_per_1m": 10,
+                              "through": "2026-08-31"},
+            "pricing_standard": {"input_per_1m": 3, "output_per_1m": 15},
+            "tokenizer_change": "updated tokenizer; same input maps to ~1.0-1.35x more "
+                                "tokens vs Sonnet 4.6.",
+            "named_benchmarks_image_only": ["BrowseComp", "OSWorld-Verified",
+                                            "Humanity's Last Exam (HLE)"],
+            "benchmark_numbers": "NOT captured: reported only as chart images. Await the "
+                                 "Sonnet 5 System Card PDF or independent aggregators.",
+            "system_card_url": "https://www.anthropic.com/claude-sonnet-5-system-card",
+            "cyber_safeguards": "enabled by default (Cyber Verification Program).",
+        },
+    },
+    {
+        "canonical_slug": "deepseek/deepseek-v4-flash-0731",
+        "display_name": "DeepSeek V4 Flash 0731",
+        "developer_id": "deepseek",
+        "family": "deepseek-v4",
+        "generation": "4",
+        "tier_or_variant": "flash",
+        "training_role": "reasoning",
+        "release_date": "2026-07-31",
+        "snapshot_date": "2026-07-31",
+        "stability": "pinned",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("deepseek/deepseek-v4-flash-0731", "api_model_id"),
+            ("deepseek-v4-flash-0731", "bare_name"),
+            ("DeepSeek-V4-Flash-0731", "display_name"),
+            ("DeepSeek V4 Flash Exp", "display_name"),
+            ("deepseek-v4-flash-exp", "alias"),
+            ("deepseek-ai/DeepSeek-V4-Flash-0731", "hf_repo_id"),
+            ("~deepseek/deepseek-v4-flash-latest", "latest_alias"),
+        ),
+        "evidence": {
+            "source_url": "https://api-docs.deepseek.com/updates/",
+            "release_date": "2026-07-31",
+            "status": "public beta; official release of DeepSeek-V4-Flash, superseding "
+                      "DeepSeek-V4-Flash-Preview.",
+            "architecture": "same architecture and size as V4-Flash-Preview; gains come "
+                            "from re-post-training, not a larger network.",
+            "context": {"input_tokens": 1_048_576, "max_output_tokens": 384_000},
+            "pricing_per_1m": {"input_cache_miss": 0.14, "input_cache_hit": 0.0028,
+                               "output": 0.28},
+            "peak_pricing_policy": "announced: 2x during Beijing 09:00-12:00 and "
+                                   "14:00-18:00.",
+            "api_surfaces": ["OpenAI ChatCompletions", "OpenAI Responses",
+                             "Anthropic messages"],
+            "legacy_mapping": "deepseek-chat / deepseek-reasoner map to the non-thinking "
+                              "and thinking modes of deepseek-v4-flash and retire three "
+                              "months after 2026-07-31.",
+            "weights": "MIT-licensed weights at deepseek-ai/DeepSeek-V4-Flash-0731.",
+            "pricing_docs_url": "https://api-docs.deepseek.com/quick_start/pricing/",
+        },
+    },
+    {
+        "canonical_slug": "anthropic/claude-opus-5-fast",
+        "display_name": "Claude Opus 5 Fast",
+        "developer_id": "anthropic",
+        "family": "claude-opus",
+        "generation": "5",
+        "tier_or_variant": "opus-fast",
+        "training_role": "reasoning",
+        "release_date": "2026-07-24",
+        "knowledge_cutoff": "2026-05",
+        "stability": "preview",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("anthropic/claude-opus-5-fast", "api_model_id"),
+            ("claude-opus-5-fast", "bare_name"),
+            ("Claude Opus 5 Fast", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+            "release_date": "2026-07-24",
+            "identity_note": "serving-speed tier of claude-opus-5, priced and throttled "
+                             "separately, so it gets its own canonical row (same "
+                             "treatment as MiniMax-M2.5-highspeed). This is NOT a "
+                             "reasoning-effort variant; effort belongs in "
+                             "benchmark_result.eval_condition_json.",
+            "activation": "speed=\"fast\" with the fast-mode-2026-02-01 beta header.",
+            "supported_models": ["claude-opus-5", "claude-opus-4-8"],
+            "availability": "research preview, first-party Claude API only; not on "
+                            "Amazon Bedrock, Google Cloud, or Microsoft Foundry; access "
+                            "via account manager or waitlist.",
+            "pricing_per_1m": {"input": 10, "output": 50},
+            "standard_opus_5_pricing_per_1m": {"input": 5, "output": 25},
+            "behavior": "raises output tokens per second, not time to first token; not "
+                        "available on the Batch API; switching speeds invalidates "
+                        "prompt caching.",
+        },
+    },
+    {
+        "canonical_slug": "thinkingmachines/Inkling",
+        "display_name": "Inkling",
+        "developer_id": "thinkingmachines",
+        "family": "inkling",
+        "tier_or_variant": "flagship",
+        "parameter_scale": "975b-a41b",
+        "training_role": "reasoning",
+        "release_date": "2026-06-15",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("thinkingmachines/Inkling", "api_model_id"),
+            ("thinkingmachines/inkling", "api_model_id"),
+            ("Inkling", "bare_name"),
+            ("inkling", "bare_name"),
+            ("Thinking Machines: Inkling", "display_name"),
+            ("thinkingmachines/Inkling", "hf_repo_id"),
+            ("thinkingmachines/thinkingmachines/Inkling", "reexport_id"),
+        ),
+        "evidence": {
+            "source_url": "https://thinkingmachines.ai/news/inkling/",
+            "release_date": "2026-06-15",
+            "architecture": "Mixture-of-Experts, 975B total parameters with 41B active.",
+            "context_tokens": 1_000_000,
+            "modalities": "text, image, and audio input; text output.",
+            "open_weights": True,
+            "docs_url": "https://thinkingmachines.ai/model-card/inkling/",
+        },
+    },
+    {
+        "canonical_slug": "thinkingmachines/Inkling-Small",
+        "display_name": "Inkling-Small",
+        "developer_id": "thinkingmachines",
+        "family": "inkling",
+        "tier_or_variant": "small",
+        "parameter_scale": "276b-a12b",
+        "training_role": "reasoning",
+        "release_date": "2026-07-30",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("thinkingmachines/Inkling-Small", "api_model_id"),
+            ("Inkling-Small", "bare_name"),
+            ("inkling-small", "bare_name"),
+            ("Thinking Machines: Inkling Small", "display_name"),
+            ("thinkingmachines/Inkling-Small", "hf_repo_id"),
+            ("thinkingmachines/thinkingmachines/Inkling-Small", "reexport_id"),
+        ),
+        "evidence": {
+            "source_url": "https://thinkingmachines.ai/news/inkling-small/",
+            "release_date": "2026-07-30",
+            "architecture": "Mixture-of-Experts, 276B total parameters with 12B active; "
+                            "about one quarter the size of Inkling (975B total, 41B "
+                            "active).",
+            "context_tokens": 1_000_000,
+            "modalities": "text, image, and audio input; text output; native reasoning "
+                          "over audio and images; adjustable thinking effort.",
+            "training_hardware": "NVIDIA GB300 NVL72.",
+            "weights": "full weights released (Apache-2.0) at "
+                       "thinkingmachines/Inkling-Small; HF repo created 2026-07-27.",
+            "surfaces": "fine-tuning on Tinker; chat in Tinker Playground.",
+            "model_card_url": "https://thinkingmachines.ai/model-card/inkling-small/",
+            "benchmark_numbers": "NOT captured here; Artificial Analysis places it "
+                                 "within a point of Inkling on their intelligence index.",
+        },
+    },
+    {
+        "canonical_slug": "minimax/MiniMax-H3",
+        "display_name": "MiniMax-H3",
+        "developer_id": "minimax",
+        "family": "minimax-h",
+        "generation": "3",
+        "release_date": "2026-07-31",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("MiniMax-H3", "api_model_id"),
+            ("minimax/minimax-h3", "api_model_id"),
+            ("minimax-h3", "bare_name"),
+            ("MiniMaxAI/MiniMax-H3", "hf_repo_id"),
+        ),
+        "evidence": {
+            "source_url": "https://www.minimax.io/blog/minimax-h3",
+            "release_date": "2026-07-31",
+            "class": "omni-modal generation model: text, image, video, and audio input; "
+                     "generates video with native stereo audio.",
+            "output_limits": "up to 2K resolution, up to 15 seconds per generation; 2K "
+                             "is the default.",
+            "technologies": ["Contextual Omni Representation", "H3-VAE",
+                             "H3-Omni Transformer", "In-Context Regeneration"],
+            "pricing_per_second": {"2k_cny": 0.80, "768p_cny": 0.50},
+            "api": "POST /v2/video_generation with model MiniMax-H3; Vercel AI Gateway "
+                   "id minimax/minimax-h3.",
+            "open_weights_status": "announced for release 'in the coming days' subject "
+                                   "to regulation; MiniMaxAI/MiniMax-H3 repo created "
+                                   "2026-07-28 with no published weights at capture "
+                                   "time, so open_weights stays 0 until artifacts land.",
+        },
+    },
+    {
+        "canonical_slug": "alibaba/qwen3.8-max",
+        "display_name": "Qwen3.8-Max",
+        "developer_id": "alibaba",
+        "family": "qwen",
+        "generation": "3.8",
+        "tier_or_variant": "max",
+        "parameter_scale": "2.4t",
+        "training_role": "reasoning",
+        "release_date": "2026-08-03",
+        "open_weights": True,
+        "confidence": "probable",
+        "aliases": (
+            ("qwen3.8-max", "bare_name"),
+            ("alibaba/qwen3.8-max", "api_model_id"),
+            ("Qwen3.8-Max", "display_name"),
+            ("Qwen/Qwen3.8-2.4T-A95B", "hf_repo_id"),
+        ),
+        "evidence": {
+            "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
+            "release_date": "2026-08-03",
+            "availability": "general access through Alibaba Cloud Model Studio APIs and "
+                            "QwenWork; preview (qwen3.8-max-preview) announced "
+                            "2026-07-19 at WAIC Shanghai through Token Plan, Qoder, and "
+                            "QoderWork.",
+            "parameters": "2.4T total parameters (sparse MoE); active parameter count "
+                          "not disclosed.",
+            "context": "up to 1M tokens; the preview surface reports 983,616 input and "
+                       "131,072 max output tokens.",
+            "modalities": "text, image, video, and document input; text output.",
+            "reasoning": "always-on reasoning with low/high/xhigh levels, default xhigh.",
+            "open_weights_status": "Open weights released 2026-08-12 as "
+                                   "Qwen/Qwen3.8-2.4T-A95B on HuggingFace (FP8). "
+                                   "Text-only: no vision, 262K native context "
+                                   "(extensible to ~1M). The hosted Qwen3.8-Max API "
+                                   "retains vision, 1M context, and built-in tools.",
+            "confidence_note": "release_date is the general-availability date; Alibaba "
+                               "had not published a dated first-party launch post at "
+                               "capture time, hence canonical_confidence=probable.",
+            "vendor_claims": "second only to Claude Fable 5 in Alibaba's own comparison; "
+                             "5th in Text Arena and 2nd in Vision Arena per Alibaba. "
+                             "Self-reported, NOT captured as benchmark_result rows.",
+        },
+    },
+    {
+        "canonical_slug": "alibaba/qwen3.8-27b",
+        "display_name": "Qwen3.8 27B",
+        "developer_id": "alibaba",
+        "family": "qwen",
+        "generation": "3.8",
+        "tier_or_variant": "27b",
+        "parameter_scale": "27b",
+        "training_role": "general",
+        "release_date": "2026-08-21",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("qwen3.8-27b", "bare_name"),
+            ("alibaba/qwen3.8-27b", "api_model_id"),
+            ("qwen/qwen3.8-27b", "router_id"),
+            ("Qwen3.8 27B", "display_name"),
+            ("Qwen/Qwen3.8-27B", "hf_repo_id"),
+        ),
+        "evidence": {
+            "source_url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+            "release_date": "2026-08-21",
+            "architecture": "Dense 27B transformer.",
+            "open_weights": True,
+        },
+    },
+    {
+        "canonical_slug": "kwaipilot/kat-coder-pro-v2.5",
+        "display_name": "KAT-Coder-Pro V2.5",
+        "developer_id": "kwaipilot",
+        "family": "kat-coder",
+        "generation": "2.5",
+        "tier_or_variant": "pro",
+        "training_role": "reasoning",
+        "release_date": "2026-07-10",
+        "snapshot_date": "2026-07-10",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("kwaipilot/kat-coder-pro-v2.5", "api_model_id"),
+            ("kat-coder-pro-v2.5", "bare_name"),
+            ("kat-coder-pro-v2.5-20260710", "dated_api_model_id"),
+            ("Kwaipilot: KAT-Coder-Pro V2.5", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://arxiv.org/abs/2607.05471",
+            "release_date": "2026-07-10",
+            "developer": "KwaiKAT team (Kuaishou); served through StreamLake.",
+            "class": "agentic coding model trained to operate inside executable "
+                     "repositories rather than single-turn code generation.",
+            "context_tokens": 256_000,
+            "pricing_per_1m": {"input": 0.74, "output": 2.96, "input_cache_read": 0.15},
+            "training_system": "AutoBuilder raised verifiable environments from 16.5% to "
+                               "57.2% across 12 languages (100,000+ environments); "
+                               "sandbox hardening cut RL trajectory feedback errors from "
+                               "~16% to under 2%; asymmetric actor-critic PPO with "
+                               "hindsight-augmented value estimation; Multi-Teacher "
+                               "On-Policy Distillation over five domain experts.",
+            "self_reported_benchmarks": "PinchBench 94.9 (top agentic tool-use) and "
+                                        "SWE-Bench Pro 65.2 (second behind Opus 4.8), "
+                                        "under a Claude Code harness. NOT captured as "
+                                        "benchmark_result rows: self-reported.",
+        },
+    },
+    {
+        "canonical_slug": "kwaipilot/kat-coder-air-v2.5",
+        "display_name": "KAT-Coder-Air V2.5",
+        "developer_id": "kwaipilot",
+        "family": "kat-coder",
+        "generation": "2.5",
+        "tier_or_variant": "air",
+        "training_role": "reasoning",
+        "release_date": "2026-07-10",
+        "snapshot_date": "2026-07-10",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("kwaipilot/kat-coder-air-v2.5", "api_model_id"),
+            ("kat-coder-air-v2.5", "bare_name"),
+            ("Kwaipilot: KAT-Coder-Air V2.5", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://arxiv.org/abs/2607.05471",
+            "release_date": "2026-07-10",
+            "developer": "KwaiKAT team (Kuaishou); served through StreamLake.",
+            "class": "smaller-cost agentic coding tier of the KAT-Coder V2.5 release.",
+            "context_tokens": 256_000,
+            "pricing_per_1m": {"input": 0.15, "output": 0.60, "input_cache_read": 0.03},
+        },
+    },
+    {
+        "canonical_slug": "kwaipilot/KAT-Coder-V2.5-Dev",
+        "display_name": "KAT-Coder-V2.5-Dev",
+        "developer_id": "kwaipilot",
+        "family": "kat-coder",
+        "generation": "2.5",
+        "tier_or_variant": "dev",
+        "parameter_scale": "35b-a3b",
+        "training_role": "instruct",
+        "release_date": "2026-07-23",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("Kwaipilot/KAT-Coder-V2.5-Dev", "hf_repo_id"),
+            ("KAT-Coder-V2.5-Dev", "bare_name"),
+        ),
+        "evidence": {
+            "source_url": "https://huggingface.co/Kwaipilot/KAT-Coder-V2.5-Dev",
+            "release_date": "2026-07-23",
+            "class": "open-weight companion to the served KAT-Coder V2.5 tiers.",
+            "architecture": "35B total / 3B active MoE post-trained from "
+                            "Qwen3.6-35B-A3B; text only, no vision.",
+            "training": "127K SFT examples plus reinforcement learning.",
+            "license": "apache-2.0",
+            "note": "distinct from the served kat-coder-pro/air v2.5 tiers: different "
+                    "parameter scale and base model, so it is its own canonical row.",
+        },
+    },
+    {
+        "canonical_slug": "kwaipilot/kat-coder-pro-v1",
+        "display_name": "KAT-Coder-Pro V1",
+        "developer_id": "kwaipilot",
+        "family": "kat-coder",
+        "generation": "1.0",
+        "tier_or_variant": "pro",
+        "training_role": "reasoning",
+        "release_date": "2026-06-01",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("kwaipilot/kat-coder-pro-v1", "api_model_id"),
+            ("kat-coder-pro-v1", "bare_name"),
+            ("KAT-Coder-Pro V1", "display_name"),
+            ("KAT-Coder-Pro-V1", "bare_name"),
+            ("KAT Coder Pro V1", "display_name"),
+            ("kwaikat/kat-coder-pro-v1", "router_id"),
+            ("kwaikat/kat-coder-pro-v1", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://artificialanalysis.ai/models/kat-coder-pro-v1",
+            "release_date": "2026-06-01",
+            "developer": "KwaiKAT team (Kuaishou)",
+        },
+    },
+    {
+        "canonical_slug": "kwaipilot/kat-coder-pro-v2",
+        "display_name": "KAT-Coder-Pro V2",
+        "developer_id": "kwaipilot",
+        "family": "kat-coder",
+        "generation": "2.0",
+        "tier_or_variant": "pro",
+        "training_role": "reasoning",
+        "release_date": "2026-06-25",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("kwaipilot/kat-coder-pro-v2", "api_model_id"),
+            ("kat-coder-pro-v2", "bare_name"),
+            ("KAT-Coder-Pro V2", "display_name"),
+            ("KAT-Coder-Pro-V2", "bare_name"),
+            ("KAT Coder Pro V2", "display_name"),
+            ("kwaikat/kat-coder-pro-v2", "router_id"),
+            ("kwaikat/kat-coder-pro-v2", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://artificialanalysis.ai/models/kat-coder-pro-v2",
+            "release_date": "2026-06-25",
+            "developer": "KwaiKAT team (Kuaishou)",
+        },
+    },
+    {
+        "canonical_slug": "xai/grok-voice-think-fast-2.0",
+        "display_name": "Grok Voice Think Fast 2.0",
+        "developer_id": "xai",
+        "family": "grok-voice",
+        "generation": "2.0",
+        "tier_or_variant": "think-fast",
+        "release_date": "2026-07-29",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("xai/grok-voice-think-fast-2.0", "api_model_id"),
+            ("grok-voice-think-fast-2.0", "bare_name"),
+            ("Grok Voice Think Fast 2.0", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://x.ai/news/grok-voice-think-fast-2",
+            "release_date": "2026-07-29",
+            "class": "speech-to-speech voice model over a realtime WebSocket "
+                     "(wss://api.x.ai/v1/realtime).",
+            "pricing_per_audio_minute": 0.08,
+            "latest_alias_migration": "grok-voice-latest moves from "
+                                      "grok-voice-think-fast-1.0 to 2.0 on 2026-08-05; "
+                                      "pin 1.0 to stay.",
+            "vendor_claims": "1.5-2.0x transcription accuracy over large STT models and "
+                             "a ~10x gap in noisy or telephony audio; faster, more "
+                             "token-efficient reasoning with earlier tool calls. "
+                             "Self-reported, NOT captured as benchmark_result rows.",
+            "docs_url": "https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.5-flash-cyber",
+        "display_name": "Gemini 3.5 Flash Cyber",
+        "developer_id": "google",
+        "family": "gemini",
+        "generation": "3.5",
+        "tier_or_variant": "flash-cyber",
+        "training_role": "reasoning",
+        "release_date": "2026-07-21",
+        "stability": "preview",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.5-flash-cyber", "bare_name"),
+            ("google/gemini-3.5-flash-cyber", "api_model_id"),
+            ("Gemini 3.5 Flash Cyber", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://deepmind.google/blog/introducing-gemini-3-5-flash-cyber/",
+            "release_date": "2026-07-21",
+            "class": "cybersecurity-specialized fine-tune of Gemini 3.5 Flash for "
+                     "finding, validating, and patching vulnerabilities.",
+            "availability": "limited-access pilot inside CodeMender for governments and "
+                            "trusted partners; no public token pricing, hence "
+                            "stability=preview and no price rows.",
+            "usage_pattern": "multiple agents invoked over a large codebase collaborate "
+                             "on one vulnerability report.",
+            "vendor_claims": "competitive with larger models on CyberGym; exceeds "
+                             "mainline 3.5 Flash and 3.6 Flash under stressed "
+                             "evaluation; more unique vulnerabilities on complex targets "
+                             "such as V8. Self-reported, NOT captured as "
+                             "benchmark_result rows.",
+            "launch_post_url": "https://blog.google/innovation-and-ai/models-and-research/"
+                               "gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/",
+        },
+    },
+    {
+        "canonical_slug": "lgai/K-EXAONE-2.0-750B-A37B",
+        "display_name": "K-EXAONE 2.0",
+        "developer_id": "lgai",
+        "family": "k-exaone",
+        "generation": "2.0",
+        "parameter_scale": "750b-a37b",
+        "training_role": "reasoning",
+        "release_date": "2026-07-31",
+        "knowledge_cutoff": "2025-Q2",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("LGAI-EXAONE/K-EXAONE-2.0-750B-A37B", "hf_repo_id"),
+            ("K-EXAONE-2.0-750B-A37B", "bare_name"),
+            ("K-EXAONE 2.0", "display_name"),
+            ("K-EXAONE", "bare_name"),
+            ("k-exaone", "bare_name"),
+            ("K-EXAONE (Reasoning)", "display_name"),
+            ("K-EXAONE (Non-reasoning)", "display_name"),
+            ("lg/k-exaone", "router_id"),
+            ("lg/k-exaone", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://www.lgresearch.ai/news/view?seq=678",
+            "release_date": "2026-07-31",
+            "developer": "LG AI Research; part of Korea's Sovereign AI Foundation Model "
+                         "Project.",
+            "architecture": "MoE, 750B total with 37B active; 1 shared expert plus 256 "
+                            "routed experts with 8 activated; 78 layers (2 dense, 76 "
+                            "sparse); hidden 6,144; intermediate 18,432; 64 query and 8 "
+                            "key/value heads; vocabulary 153,600.",
+            "context_tokens": 262_144,
+            "license": "apache-2.0",
+            "languages": "expanded from 6 to 10: Korean, English, Spanish, German, "
+                         "Japanese, Vietnamese, French, Italian, Polish, Portuguese.",
+            "training": "upcycled from the 236B first-phase model with continual "
+                        "pretraining, difficulty-focused mid-training, and post-training.",
+            "published_artifacts": "base plus FP8, NVFP4, and DSpark quantized repos; "
+                                   "base HF repo created 2026-07-29.",
+            "vendor_claims": "average 70.1/100 across 24 benchmarks; emphasis on "
+                             "long-context retrieval and safety. Self-reported, NOT "
+                             "captured as benchmark_result rows.",
+        },
+    },
+    {
+        "canonical_slug": "amd/Instella-MoE-16B-A3B",
+        "display_name": "Instella-MoE-16B-A3B",
+        "developer_id": "amd",
+        "family": "instella",
+        "generation": "moe",
+        "parameter_scale": "16b-a2.8b",
+        "training_role": "reasoning",
+        "release_date": "2026-07-23",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("amd/Instella-MoE-16B-A3B-Think", "hf_repo_id"),
+            ("amd/Instella-MoE-16B-A3B-Base", "hf_repo_id"),
+            ("Instella-MoE-16B-A3B", "bare_name"),
+            ("Instella-MoE-16B-A3B-Think", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://rocm.blogs.amd.com/artificial-intelligence/instella-moe/README.html",
+            "release_date": "2026-07-23",
+            "class": "fully open Mixture-of-Experts language model: weights for every "
+                     "training stage, training configs, data mixtures, and code.",
+            "architecture": "16B total parameters with 2.8B active per token; 27 decoder "
+                            "layers; hidden 2,048; 16 attention heads; 64 experts (2 "
+                            "shared, 6 active); vocabulary 128,896; Gated Multi-head "
+                            "Latent Attention and FarSkip-Collective connectivity.",
+            "training_hardware": "trained from scratch on AMD Instinct MI300X and MI325X "
+                                 "with the ROCm stack (Primus and Miles frameworks).",
+            "checkpoints": "Pretrain, Midtrain, Base (long context), SFT, DPO, RL, and "
+                           "Think; flagship instruct checkpoint is "
+                           "Instella-MoE-16B-A3B-Think, HF repos created 2026-07-23.",
+            "code_url": "https://github.com/AMD-AGI/Instella-MoE",
+        },
+    },
+    {
+        "canonical_slug": "deepseek/deepseek-v4-pro-0813",
+        "display_name": "DeepSeek V4 Pro 0813",
+        "developer_id": "deepseek",
+        "family": "deepseek-v4",
+        "generation": "4",
+        "tier_or_variant": "pro",
+        "parameter_scale": "1.6t-a49b",
+        "training_role": "reasoning",
+        "release_date": "2026-08-12",
+        "snapshot_date": "2026-08-12",
+        "stability": "pinned",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("deepseek/deepseek-v4-pro-0813", "api_model_id"),
+            ("deepseek-v4-pro-0813", "bare_name"),
+            ("DeepSeek-V4-Pro-0813", "display_name"),
+            ("deepseek-ai/DeepSeek-V4-Pro", "hf_repo_id"),
+            ("~deepseek/deepseek-v4-pro-latest", "latest_alias"),
+        ),
+        "evidence": {
+            "source_url": "https://api-docs.deepseek.com/updates/",
+            "release_date": "2026-08-12",
+            "status": "official GA build of DeepSeek-V4-Pro, replacing the April preview. "
+                      "No separate announcement; the flagship silently swapped to the "
+                      "0813 build on the API and in DeepSeek Chat.",
+            "architecture": "1.6T total parameters, 49B active (MoE); same architecture "
+                            "as the April preview. Gains come from re-post-training, not "
+                            "a larger network.",
+            "context": {"input_tokens": 1_048_576, "max_output_tokens": 384_000},
+            "modes": "thinking and non-thinking modes; deepseek-chat and deepseek-reasoner "
+                     "map to non-thinking and thinking respectively.",
+            "pricing_per_1m": {"input": 0.435, "input_cache_hit": 0.003625,
+                               "output": 0.87},
+            "weights": "MIT-licensed weights at deepseek-ai/DeepSeek-V4-Pro; the 0813 "
+                       "build shares the same HF repo as the preview (no 0813-suffixed "
+                       "repo at capture time).",
+            "performance": "DeepSeek reports a 15.8% uplift since the April preview; "
+                           "approaches Claude Fable 5 on several agentic benchmarks "
+                           "(Terminal Bench 2.1, CyberGym, DeepSWE, AutomationBench). "
+                           "Self-reported, NOT captured as benchmark_result rows.",
+            "openrouter_url": "https://openrouter.ai/deepseek/deepseek-v4-pro-0813",
+        },
+    },
+    {
+        "canonical_slug": "xai/grok-4.6",
+        "display_name": "Grok 4.6",
+        "developer_id": "xai",
+        "family": "grok",
+        "generation": "4.6",
+        "training_role": "reasoning",
+        "release_date": "2026-08-12",
+        "knowledge_cutoff": "2026-02-01",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("grok-4.6", "api_model_id"),
+            ("grok-4.6", "bare_name"),
+            ("x-ai/grok-4.6", "router_id"),
+            ("xai/grok-4.6", "api_model_id"),
+            ("Grok 4.6", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://x.ai/news/grok-4-6",
+            "release_date": "2026-08-12",
+            "positioning": "extends Grok 4.5 with focus on long-running agents and "
+                           "ambitious interactive/visual tasks; coding, research, "
+                           "multi-step projects.",
+            "context": {"input_tokens": 500_000},
+            "modalities": "text and image input; text output.",
+            "reasoning_levels": "low, medium, high, xhigh (default: high).",
+            "pricing_per_1m": {"input": 2.0, "input_cache_hit": 0.50,
+                               "output": 6.0},
+            "long_context_pricing_per_1m": {"threshold_tokens": 200_000,
+                                            "input": 4.0, "input_cache_hit": 1.0,
+                                            "output": 12.0},
+            "fast_variant": "available at double the price for lower latency.",
+            "availability": "Cursor, Grok Build, xAI API, OpenRouter, Vercel, Cloudflare.",
+            "vendor_claims": "Artificial Analysis Intelligence Index score of 61, tied "
+                             "with GPT-5.6 Sol Max and behind Fable 5 Max (62). Grok 4.5 "
+                             "scored 56. Self-reported, NOT captured as "
+                             "benchmark_result rows.",
+            "docs_url": "https://docs.x.ai/developers/models",
+        },
+    },
+    {
+        "canonical_slug": "meta/muse-spark-1.2",
+        "display_name": "Muse Spark 1.2",
+        "developer_id": "meta",
+        "family": "muse",
+        "generation": "1.2",
+        "tier_or_variant": "spark",
+        "training_role": "reasoning",
+        "release_date": "2026-08-05",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("muse-spark-1.2", "api_model_id"),
+            ("muse-spark-1.2", "bare_name"),
+            ("meta/muse-spark-1.2", "router_id"),
+            ("Muse Spark 1.2", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2",
+            "release_date": "2026-08-05",
+            "positioning": "coding-focused update to Muse Spark 1.1; improved code "
+                           "generation, debugging, codebase understanding, and "
+                           "end-to-end developer workflows. Shipped alongside Muse Code, "
+                           "a terminal coding agent in beta.",
+            "context": {"input_tokens": 1_048_576},
+            "modalities": "text, image, video, PDF, and audio input; text output.",
+            "pricing_per_1m_standard": {"input": 1.25, "input_cache_hit": 0.15,
+                                        "output": 4.25},
+            "pricing_per_1m_contributor": {"input": 0.10, "input_cache_hit": 0.002,
+                                           "output": 0.20,
+                                           "note": "prompts/completions may be used to "
+                                                   "train future Meta models."},
+            "availability": "Muse Code (beta) and Meta Model API (api.meta.ai/v1); "
+                            "OpenAI SDK compatible.",
+            "open_weights_status": "Meta states weights will be open-sourced in the "
+                                   "coming weeks; not published at capture time, so "
+                                   "open_weights stays 0.",
+            "docs_url": "https://developer.meta.com/ai/models/muse-spark/",
+        },
+    },
+    {
+        "canonical_slug": "meta/muse-glimmer-30b",
+        "display_name": "Muse Glimmer 30B",
+        "developer_id": "meta",
+        "family": "muse-glimmer",
+        "parameter_scale": "30b",
+        "training_role": "instruct",
+        "release_date": "2026-08-10",
+        "knowledge_cutoff": "2026-01-04",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("meta-models/Muse-Glimmer-30B", "hf_repo_id"),
+            ("Muse-Glimmer-30B", "bare_name"),
+            ("Muse Glimmer 30B", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://research.meta.ai/blog/introducing-muse-glimmer-open-agentic-model",
+            "release_date": "2026-08-10",
+            "class": "open-weight agentic model optimized for local, on-device use on "
+                     "consumer hardware (24-32 GB VRAM).",
+            "architecture": "dense causal Transformer with a frozen ViT-G/14 perception "
+                            "encoder (~1.8B params); 29.6B total parameters; hidden 6656; "
+                            "52 layers; GQA with 32 query / 2 KV heads; sliding window "
+                            "attention (2048) with local/global pattern.",
+            "context": {"input_tokens": 131_072},
+            "modalities": "text and image input; text output.",
+            "quantization": "4-bit weight quantization reduces footprint to under 20 GB; "
+                            "includes DFlash drafter for speculative decoding.",
+            "training": "pre-trained on Muse Spark outputs with logit distillation; "
+                        "mid-trained with longer contexts and richer agentic data; "
+                        "post-trained with SFT, on-policy distillation, and RL across "
+                        "general, reasoning, coding, and agentic domains.",
+            "license": "apache-2.0",
+            "ecosystem": "llama.cpp, MLX, ExecuTorch, vLLM, SGLang; local deployment via "
+                         "Ollama, LM Studio, Unsloth; serving via Together AI, Fireworks "
+                         "AI, OpenRouter.",
+            "hf_url": "https://huggingface.co/meta-models/Muse-Glimmer-30B",
+        },
+    },
+    {
+        "canonical_slug": "openai/gpt-5.6-cyber",
+        "display_name": "GPT-5.6 Cyber",
+        "developer_id": "openai",
+        "family": "gpt",
+        "generation": "5.6",
+        "tier_or_variant": "cyber",
+        "training_role": "reasoning",
+        "release_date": "2026-08-10",
+        "stability": "preview",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gpt-5.6-cyber", "api_model_id"),
+            ("gpt-5.6-cyber", "bare_name"),
+            ("GPT-5.6 Cyber", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://openai.com/index/expanding-daybreak-as-the-cyber-defense-window-narrows/",
+            "release_date": "2026-08-10",
+            "class": "cybersecurity-focused fine-tune of GPT-5.6 Sol for authorized "
+                     "vulnerability research, exploit validation, and security testing.",
+            "access": "Daybreak Red program only; restricted to approved individuals and "
+                      "organizations with identity verification. Not generally available. "
+                      "Starting 2026-09-01, Daybreak accounts must use hardware security "
+                      "keys.",
+            "context": {"input_tokens": 400_000, "max_output_tokens": 128_000},
+            "modalities": "text and image input; text output.",
+            "pricing_per_1m": {"input": 12.50, "input_cache_hit": 1.25,
+                               "output": 75.00},
+            "preparedness_rating": "High (not Critical) on OpenAI's Preparedness "
+                                   "Framework cybersecurity capability.",
+            "performance": "completed 95% of advanced cybersecurity requests vs 2% for "
+                           "GPT-5.6 Sol in internal testing; identified two previously "
+                           "unknown flaws in Google's V8 engine. Self-reported, NOT "
+                           "captured as benchmark_result rows.",
+            "docs_url": "https://developers.openai.com/api/docs/models/gpt-5.6-cyber",
+        },
+    },
+    {
+        "canonical_slug": "nvidia/nemotron-3.5-lightning",
+        "display_name": "Nemotron 3.5 Lightning",
+        "developer_id": "nvidia",
+        "family": "nemotron",
+        "generation": "3.5",
+        "tier_or_variant": "lightning",
+        "parameter_scale": "30b-a3b",
+        "training_role": "instruct",
+        "release_date": "2026-08-11",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("nvidia/nemotron-3.5-lightning", "api_model_id"),
+            ("nemotron-3.5-lightning", "bare_name"),
+            ("Nemotron 3.5 Lightning", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://developer.nvidia.com/blog/nvidia-nemotron-3-5-lightning-delivers-fast-accurate-specialized-task-execution-for-long-running-agents/",
+            "release_date": "2026-08-11",
+            "class": "open 30B MoE model (3B active) optimized for fast, low-latency "
+                     "execution in always-on agent workflows.",
+            "architecture": "30B total parameters with 3B active per token; supports "
+                            "NVFP4 and BF16 checkpoints; speculative decoding and "
+                            "DFlash/DSpark for inference optimization.",
+            "deployment": "NVIDIA NeMo Switchyard coordinates intelligent model routing; "
+                          "compatible with DGX, Blackwell/Hopper/Ampere GPUs; integrations "
+                          "with OpenRouter, OpenClaw, and Hermes Agent.",
+            "license": "OpenMDW-1.1",
+            "weights": "weights, data, and recipes released on Hugging Face and "
+                       "ModelScope.",
+        },
+    },
+    {
+        "canonical_slug": "zhipuai/glm-5.3",
+        "display_name": "GLM-5.3",
+        "developer_id": "zhipuai",
+        "family": "glm",
+        "generation": "5.3",
+        "training_role": "chat",
+        "release_date": "2026-08-14",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("glm-5.3", "bare_name"),
+            ("zhipuai/glm-5.3", "api_model_id"),
+            ("zai/glm-5.3", "api_model_id"),
+            ("GLM-5.3", "display_name"),
+            ("zhipuai-coding-plan/glm-5.3", "api_model_id"),
+            ("zai-coding-plan/glm-5.3", "api_model_id"),
+            ("opencode-go/glm-5.3", "router_id"),
+        ),
+        "evidence": {
+            "source_url": "https://z.ai/blog/glm-5.3",
+            "release_date": "2026-08-14",
+            "positioning": "Zhipu AI (Z.ai) extreme scaling post-training on GLM-5.2 base architecture; "
+                           "+50% on Z.ai Code Bench, emergent vulnerability discovery on CyberGym.",
+            "context_window": 131072,
+            "weights": "open weights scheduled ~2 weeks post-launch following safety hardening.",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.7-flash",
+        "display_name": "Gemini 3.7 Flash",
+        "developer_id": "google",
+        "family": "gemini-flash",
+        "generation": "3.7",
+        "tier_or_variant": "flash",
+        "training_role": "reasoning",
+        "release_date": "2026-08-13",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.7-flash", "bare_name"),
+            ("google/gemini-3.7-flash", "api_model_id"),
+            ("gemini-3.7-flash-latest", "latest_alias"),
+            ("models/gemini-3.7-flash", "api_model_id"),
+            ("Gemini 3.7 Flash", "display_name"),
+            ("google/gemini-3.7-flash-preview", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/",
+            "release_date": "2026-08-13",
+            "positioning": "workhorse reasoning model optimized for coding, agentic workflows, "
+                           "and complex knowledge tasks; 1M token context window, 64k max output.",
+            "pricing_intro": {"input_per_1m": 0.75, "output_per_1m": 3.75,
+                              "through": "2026-12-31"},
+            "pricing_standard": {"input_per_1m": 1.50, "output_per_1m": 7.50},
+            "context_window": 1000000,
+            "max_output": 64000,
+            "system_card_url": "https://deepmind.google/models/model-cards/gemini-3-7-flash/",
+        },
+    },
+    {
+        "canonical_slug": "microsoft/mai-thinking-1",
+        "display_name": "MAI-Thinking-1",
+        "developer_id": "microsoft",
+        "family": "mai",
+        "generation": "1",
+        "tier_or_variant": "thinking",
+        "parameter_scale": "1t",
+        "training_role": "reasoning",
+        "release_date": "2026-08-12",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("mai-thinking-1", "bare_name"),
+            ("microsoft/mai-thinking-1", "api_model_id"),
+            ("MAI-Thinking-1", "display_name"),
+            ("MAI-Thinking-1-preview", "api_model_id"),
+            ("microsoft/mai-thinking-1-preview", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://microsoft.ai/news/introducing-mai-thinking-1/",
+            "release_date": "2026-08-12",
+            "positioning": "Microsoft's first in-house reasoning model; sparse MoE architecture with "
+                           "~1T total / 35B active parameters, 256K context window.",
+            "context_window": 262144,
+            "system_card_url": "https://microsoft.ai/pdf/mai-thinking-1.pdf",
+        },
+    },
+    {
+        "canonical_slug": "bytedance/seed-2.1-turbo",
+        "display_name": "Seed 2.1 Turbo",
+        "developer_id": "bytedance",
+        "family": "seed",
+        "generation": "2.1",
+        "tier_or_variant": "turbo",
+        "training_role": "chat",
+        "release_date": "2026-08-12",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("seed-2.1-turbo", "bare_name"),
+            ("bytedance/seed-2.1-turbo", "api_model_id"),
+            ("bytedance-seed/seed-2.1-turbo", "router_id"),
+            ("Seed-2.1-Turbo", "display_name"),
+            ("doubao-seed-2.1-turbo", "bare_name"),
+            ("bytedance/doubao-seed-2.1-turbo", "api_model_id"),
+        ),
+        "evidence": {
+            "source_url": "https://openrouter.ai/bytedance-seed/seed-2.1-turbo",
+            "release_date": "2026-08-12",
+            "positioning": "ByteDance multimodal model (text/image/video) for agentic and delivery workflows "
+                           "with 262k context window.",
+            "pricing_standard": {"input_per_1m": 0.44, "output_per_1m": 2.21},
+            "context_window": 262144,
+        },
+    },
+    {
+        "canonical_slug": "mistral/shieldstral-1.0",
+        "display_name": "Shieldstral 1.0",
+        "developer_id": "mistral",
+        "family": "shieldstral",
+        "generation": "1.0",
+        "parameter_scale": "3b",
+        "training_role": "moderation",
+        "release_date": "2026-08-04",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("shieldstral-1.0", "bare_name"),
+            ("mistralai/Shieldstral-1.0", "hf_repo_id"),
+            ("mistral/shieldstral-1.0", "api_model_id"),
+            ("Shieldstral 1.0", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://mistral.ai/news/shieldstral/",
+            "release_date": "2026-08-04",
+            "positioning": "3B open-weights multimodal safety classifier and policy-adaptive content moderation "
+                           "model under Apache 2.0.",
+            "context_window": 32768,
+            "license": "Apache-2.0",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.5-transcribe",
+        "display_name": "Gemini 3.5 Transcribe",
+        "developer_id": "google",
+        "family": "gemini",
+        "generation": "3.5",
+        "tier_or_variant": "transcribe",
+        "training_role": "speech-to-text",
+        "release_date": "2026-08-26",
+        "stability": "stable",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.5-transcribe", "api_model_id"),
+            ("gemini-3.5-transcribe", "bare_name"),
+            ("models/gemini-3.5-transcribe", "api_model_id"),
+            ("Gemini 3.5 Transcribe", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe",
+            "release_date": "2026-08-26",
+            "availability": "generally available through the Gemini API.",
+            "positioning": "low-latency speech-to-text model with utterance-based language "
+                           "detection across 85+ languages, speaker diarization, word-level "
+                           "timestamps, Smart transcription, and custom vocabulary biasing.",
+            "modalities": "audio input; text and word-annotation output.",
+            "limits": {
+                "max_audio_minutes": 60,
+                "max_audio_minutes_with_diarization_or_word_timestamps": 30,
+                "max_diarized_speakers": 8,
+                "max_custom_vocabulary_terms": 1000,
+            },
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.5-transcribe-live",
+        "display_name": "Gemini 3.5 Transcribe Live",
+        "developer_id": "google",
+        "family": "gemini",
+        "generation": "3.5",
+        "tier_or_variant": "transcribe-live",
+        "training_role": "speech-to-text",
+        "release_date": "2026-08-26",
+        "stability": "stable",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.5-transcribe-live", "api_model_id"),
+            ("gemini-3.5-transcribe-live", "bare_name"),
+            ("models/gemini-3.5-transcribe-live", "api_model_id"),
+            ("Gemini 3.5 Transcribe Live", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-transcribe",
+            "release_date": "2026-08-26",
+            "availability": "generally available through the Gemini Live API over WebSockets.",
+            "positioning": "low-latency bidirectional streaming speech-to-text with interim "
+                           "and finalized transcription events, language detection across "
+                           "85+ languages, Smart transcription, and custom vocabulary biasing.",
+            "modalities": "streaming audio input; streaming text output.",
+            "limits": {
+                "max_session_minutes": 10,
+                "max_custom_vocabulary_terms": 1000,
+                "speaker_diarization": False,
+                "word_level_timestamps": False,
+            },
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-omni-1.1-flash",
+        "display_name": "Gemini Omni 1.1 Flash",
+        "developer_id": "google",
+        "family": "gemini-omni",
+        "generation": "1.1",
+        "tier_or_variant": "flash",
+        "training_role": "video-generation",
+        "release_date": "2026-08-27",
+        "stability": "stable",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-omni-1.1-flash", "api_model_id"),
+            ("gemini-omni-1.1-flash", "bare_name"),
+            ("models/gemini-omni-1.1-flash", "api_model_id"),
+            ("Gemini Omni 1.1 Flash", "display_name"),
+        ),
+        "evidence": {
+            "source_url": "https://ai.google.dev/gemini-api/docs/changelog",
+            "model_card_url": "https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash",
+            "release_date": "2026-08-27",
+            "availability": "generally available through the Gemini API.",
+            "positioning": "fast conversational video generation and editing with video "
+                           "extension, first/last-frame interpolation, and resolution control.",
+            "modalities": "text, image, and video input; video output.",
+            "context_window": 1_048_576,
+            "video": {
+                "duration_seconds": "3-10",
+                "fps": 24,
+                "resolutions": ("360p", "720p", "1080p", "4k"),
+            },
+            "supersedes": "gemini-omni-flash-preview",
+            "preview_deprecation_date": "2026-09-30",
+        },
+    },
+    {
+        "canonical_slug": "anthropic/claude-fable-5-1",
+        "display_name": "Claude Fable 5.1",
+        "developer_id": "anthropic",
+        "family": "claude-fable",
+        "generation": "5.1",
+        "tier_or_variant": "flagship",
+        "training_role": "reasoning",
+        "release_date": "2026-09-01",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("claude-fable-5-1", "api_model_id"),
+            ("claude-fable-5.1", "bare_name"),
+            ("Claude Fable 5.1", "display_name"),
+            ("anthropic/claude-fable-5-1", "router_id"),
+            ("anthropic/claude-fable-5.1", "router_id"),
+        ),
+        "evidence": {
+            "source_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "release_date": "2026-09-01",
+            "positioning": "Anthropic flagship model for coding and knowledge work. "
+                           "Features Enterprise Frontier Safeguards (EFS) and improved "
+                           "safeguards reducing false positives by 60% in cybersecurity.",
+            "pricing_standard": {"input_per_1m": 10.0, "output_per_1m": 50.0},
+            "cache_pricing": {"cache_read_per_1m": 0.25, "prior_cache_read_per_1m": 1.00},
+            "cache_write_pricing": {"ttl_5m_per_1m": 12.50, "ttl_1h_per_1m": 20.00},
+            "availability": "generally available through the Anthropic API, Claude Code (defaults to High effort), and Claude.ai.",
+            "docs_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "pricing_docs_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        },
+    },
+    {
+        "canonical_slug": "anthropic/claude-mythos-5-1",
+        "display_name": "Claude Mythos 5.1",
+        "developer_id": "anthropic",
+        "family": "claude-mythos",
+        "generation": "5.1",
+        "tier_or_variant": "cyber-bio",
+        "training_role": "reasoning",
+        "release_date": "2026-09-01",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("claude-mythos-5-1", "api_model_id"),
+            ("claude-mythos-5.1", "bare_name"),
+            ("Claude Mythos 5.1", "display_name"),
+            ("anthropic/claude-mythos-5-1", "router_id"),
+            ("anthropic/claude-mythos-5.1", "router_id"),
+        ),
+        "evidence": {
+            "source_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "release_date": "2026-09-01",
+            "positioning": "Same underlying intelligence as Claude Fable 5.1, configured with "
+                           "safeguards specialized for cybersecurity and life sciences.",
+            "pricing_standard": {"input_per_1m": 10.0, "output_per_1m": 50.0},
+            "cache_pricing": {"cache_read_per_1m": 0.25},
+            "cache_write_pricing": {"ttl_5m_per_1m": 12.50, "ttl_1h_per_1m": 20.00},
+            "context_window": 1000000,
+            "max_output": 128000,
+            "availability": "restricted to trusted access programs developed in partnership with the US government.",
+            "docs_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "pricing_docs_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.8-flash",
+        "display_name": "Gemini 3.8 Flash",
+        "developer_id": "google",
+        "family": "gemini-flash",
+        "generation": "3.8",
+        "tier_or_variant": "flash",
+        "training_role": "instruct",
+        "release_date": "2026-09-02",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.8-flash", "api_model_id"),
+            ("gemini-3.8-flash", "bare_name"),
+            ("Gemini 3.8 Flash", "display_name"),
+            ("google/gemini-3.8-flash", "router_id"),
+        ),
+        "evidence": {
+            "source_url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/3-8-flash-and-3-8-flash-cyber/",
+            "release_date": "2026-09-02",
+            "positioning": "Google workhorse model for long-horizon coding, agentic workflows, "
+                           "and multi-step reasoning. Third Flash release in six weeks.",
+            "pricing_introductory": {"input_per_1m": 0.75, "output_per_1m": 3.75},
+            "pricing_post_intro": {"input_per_1m": 1.50, "output_per_1m": 7.50, "effective_date": "2027-01-01"},
+            "context_window": 1_000_000,
+            "max_output": 64000,
+            "model_card_url": "https://deepmind.google/models/model-cards/gemini-3-8-flash/",
+            "availability": "Google AI Studio, Gemini API, Android Studio, Antigravity, and Gemini Enterprise.",
+            "docs_url": "https://ai.google.dev/gemini-api/docs/latest-model",
+        },
+    },
+    {
+        "canonical_slug": "google/gemini-3.8-flash-cyber",
+        "display_name": "Gemini 3.8 Flash Cyber",
+        "developer_id": "google",
+        "family": "gemini-flash",
+        "generation": "3.8",
+        "tier_or_variant": "cyber",
+        "training_role": "instruct",
+        "release_date": "2026-09-02",
+        "open_weights": False,
+        "confidence": "verified",
+        "aliases": (
+            ("gemini-3.8-flash-cyber", "api_model_id"),
+            ("gemini-3.8-flash-cyber", "bare_name"),
+            ("Gemini 3.8 Flash Cyber", "display_name"),
+            ("google/gemini-3.8-flash-cyber", "router_id"),
+        ),
+        "evidence": {
+            "source_url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/3-8-flash-and-3-8-flash-cyber/",
+            "release_date": "2026-09-02",
+            "positioning": "Cybersecurity variant optimized for autonomous vulnerability detection "
+                           "and automated patching with CodeMender.",
+            "availability": "available to trusted defenders through the Google Fairwind Program.",
+            "docs_url": "https://deepmind.google/fairwind-program/",
+        },
+    },
+    {
+        "canonical_slug": "moonshotai/kimi-k3",
+        "display_name": "Kimi K3",
+        "developer_id": "moonshotai",
+        "family": "kimi",
+        "generation": "k3",
+        "parameter_scale": "2.8t",
+        "training_role": "reasoning",
+        "release_date": "2026-07-16",
+        "open_weights": True,
+        "confidence": "verified",
+        "aliases": (
+            ("kimi-k3", "api_model_id"),
+            ("kimi-k3", "bare_name"),
+            ("Kimi K3", "display_name"),
+            ("moonshotai/kimi-k3", "router_id"),
+            ("MoonshotAI/Kimi-K3", "hf_repo_id"),
+        ),
+        "evidence": {
+            "source_url": "https://github.com/MoonshotAI/Kimi-K3",
+            "release_date": "2026-07-16",
+            "weights_release_date": "2026-07-27",
+            "positioning": "Moonshot AI 2.8T MoE open-weight foundation model with Kimi Delta Attention "
+                           "(KDA) and Attention Residuals (AttnRes). Native multimodal reasoning.",
+            "context_window": 1_000_000,
+            "availability": "open weights on Hugging Face (MoonshotAI/Kimi-K3) and API via platform.kimi.ai.",
+            "license": "Kimi K3 License",
+            "docs_url": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart",
+        },
+    },
+)
+
+_MODEL_COLUMNS = (
+    "canonical_slug", "developer_id", "family", "generation", "tier_or_variant",
+    "parameter_scale", "training_role", "release_date", "snapshot_date",
+    "knowledge_cutoff", "stability", "open_weights", "canonical_confidence",
+    "display_name",
+)
+
+
+def _model_values(entry: dict[str, Any]) -> tuple[Any, ...]:
+    open_weights = entry.get("open_weights")
+    return (
+        entry["canonical_slug"],
+        entry["developer_id"],
+        entry.get("family"),
+        entry.get("generation"),
+        entry.get("tier_or_variant"),
+        entry.get("parameter_scale"),
+        entry.get("training_role"),
+        entry.get("release_date"),
+        entry.get("snapshot_date", entry.get("release_date")),
+        entry.get("knowledge_cutoff"),
+        entry.get("stability"),
+        None if open_weights is None else int(bool(open_weights)),
+        entry.get("confidence", "probable"),
+        entry["display_name"],
+    )
+
+
+def _mint(conn: sqlite3.Connection, entry: dict[str, Any], now: str) -> tuple[int, bool]:
+    """Return (model_id, created). Idempotent on canonical_slug."""
+    slug = entry["canonical_slug"]
+    row = conn.execute("SELECT id, display_name FROM model WHERE canonical_slug = ?", (slug,)).fetchone()
+    if row:
+        if row[1] is None and entry.get("display_name"):
+            conn.execute("UPDATE model SET display_name = ? WHERE id = ?", (entry["display_name"], row[0]))
+        return int(row[0]), False
+
+    _ensure_org(conn, entry["developer_id"], entry["developer_id"])
+    placeholders = ",".join("?" * (len(_MODEL_COLUMNS) + 2))
+    cur = conn.execute(
+        f"INSERT INTO model ({','.join(_MODEL_COLUMNS)}, created_at, updated_at) "
+        f"VALUES ({placeholders})",
+        (*_model_values(entry), now, now),
+    )
+    model_id = cur.lastrowid
+    assert model_id is not None  # sqlite3 sets lastrowid after a single-row INSERT
+    return int(model_id), True
+
+def _shift_date(date_str: str, days: int) -> str | None:
+    from datetime import date, timedelta
+
+    try:
+        return (date.fromisoformat(date_str) + timedelta(days=days)).isoformat()
+    except ValueError:
+        return None
+
+
+def _day_after(date_str: str) -> str | None:
+    return _shift_date(date_str, 1)
+
+
+def _day_before(date_str: str) -> str | None:
+    return _shift_date(date_str, -1)
+
+
+def _evidence_price_rows(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Translate curated announcement pricing into price_component row values.
+
+    Only USD per-1M-token figures the announcement or the developer pricing docs
+    actually published become rows. Non-token or non-USD pricing (per-second
+    video, per-audio-minute, CNY) stays prose in the evidence payload, and
+    keys that reference ANOTHER model's price are ignored entirely.
+    """
+    evidence = entry["evidence"]
+    release = entry.get("release_date")
+    rows: list[dict[str, Any]] = []
+
+    def add(component: str, amount: float, *, valid_from: str | None,
+            valid_to: str | None = None, tier: dict[str, Any] | None = None) -> None:
+        rows.append({
+            "component": component,
+            "unit": "1m_tokens",
+            "amount": float(amount),
+            "normalized": float(amount),
+            "tier_condition_json": json.dumps(tier) if tier else None,
+            "valid_from": valid_from,
+            "valid_to": valid_to,
+        })
+
+    def token_pair(spec: dict[str, Any], *, valid_from: str | None,
+                   valid_to: str | None = None, tier: dict[str, Any] | None = None) -> None:
+        if "input_per_1m" in spec:
+            add("input_token", spec["input_per_1m"], valid_from=valid_from, valid_to=valid_to, tier=tier)
+        if "output_per_1m" in spec:
+            add("output_token", spec["output_per_1m"], valid_from=valid_from, valid_to=valid_to, tier=tier)
+
+    # Windowed introductory pricing, then the post-introduction rate. Windows
+    # never overlap: the intro ends the day before the successor rate starts.
+    intro = evidence.get("pricing_intro") or evidence.get("pricing_introductory")
+    post = evidence.get("pricing_post_intro")
+    through = None
+    post_start = None
+    if isinstance(post, dict):
+        post_start = post.get("effective_date")
+    if isinstance(intro, dict):
+        through = intro.get("through") or intro.get("through_date")
+        if through is None and post_start:
+            through = _day_before(str(post_start))
+        token_pair(intro, valid_from=release, valid_to=through)
+    if isinstance(post, dict):
+        if post_start is None and through:
+            post_start = _day_after(str(through))
+        token_pair(post, valid_from=post_start)
+    standard = evidence.get("pricing_standard")
+    if isinstance(standard, dict):
+        if isinstance(intro, dict) and through:
+            start = post.get("effective_date") if isinstance(post, dict) else None
+            token_pair(standard, valid_from=start or _day_after(str(through)))
+        else:
+            token_pair(standard, valid_from=release)
+
+    # Flat per-1M tables (input/output plus cache variants).
+    per1m = evidence.get("pricing_per_1m")
+    if isinstance(per1m, dict):
+        if "input" in per1m:
+            add("input_token", per1m["input"], valid_from=release)
+        if "output" in per1m:
+            add("output_token", per1m["output"], valid_from=release)
+        for key in ("input_cache_hit", "input_cache_read", "cache_read"):
+            if key in per1m:
+                add("cache_read", per1m[key], valid_from=release)
+        for key in ("input_cache_miss",):
+            if key in per1m:
+                add("input_token", per1m[key], valid_from=release)
+
+    # Tiered variants: long-context thresholds and program tiers.
+    long_ctx = evidence.get("long_context_pricing_per_1m")
+    if isinstance(long_ctx, dict) and "threshold_tokens" in long_ctx:
+        tier = {">=": int(long_ctx["threshold_tokens"])}
+        if "input" in long_ctx:
+            add("input_token", long_ctx["input"], valid_from=release, tier=tier)
+        if "output" in long_ctx:
+            add("output_token", long_ctx["output"], valid_from=release, tier=tier)
+        if "input_cache_hit" in long_ctx:
+            add("cache_read", long_ctx["input_cache_hit"], valid_from=release, tier=tier)
+    for key, program in (("pricing_per_1m_standard", "standard"), ("pricing_per_1m_contributor", "contributor")):
+        spec = evidence.get(key)
+        if isinstance(spec, dict):
+            tier = {"program": program}
+            if "input" in spec:
+                add("input_token", spec["input"], valid_from=release, tier=tier)
+            if "output" in spec:
+                add("output_token", spec["output"], valid_from=release, tier=tier)
+            if "input_cache_hit" in spec:
+                add("cache_read", spec["input_cache_hit"], valid_from=release, tier=tier)
+
+    # Cache economics published separately from base pricing.
+    cache = evidence.get("cache_pricing")
+    if isinstance(cache, dict) and "cache_read_per_1m" in cache:
+        add("cache_read", cache["cache_read_per_1m"], valid_from=release)
+    writes = evidence.get("cache_write_pricing")
+    if isinstance(writes, dict):
+        if "ttl_5m_per_1m" in writes:
+            add("cache_write", writes["ttl_5m_per_1m"], valid_from=release, tier={"ttl": "5m"})
+        if "ttl_1h_per_1m" in writes:
+            add("cache_write", writes["ttl_1h_per_1m"], valid_from=release, tier={"ttl": "1h"})
+
+    return rows
+
+
+def _evidence_capability_rows(evidence: dict[str, Any]) -> list[tuple[str, str]]:
+    """Context/output limits stated in the announcement become model_capability rows."""
+    capabilities: list[tuple[str, str]] = []
+    context = evidence.get("context_window", evidence.get("context_tokens"))
+    if context is None and isinstance(evidence.get("context"), dict):
+        context = evidence["context"].get("input_tokens")
+    if isinstance(context, int) and context > 0:
+        capabilities.append(("context_window", str(context)))
+    max_output = evidence.get("max_output")
+    if max_output is None and isinstance(evidence.get("context"), dict):
+        max_output = evidence["context"].get("max_output_tokens")
+    if isinstance(max_output, int) and max_output > 0:
+        capabilities.append(("max_output", str(max_output)))
+    return capabilities
+
+
+def _promote_evidence_facts(
+    conn: sqlite3.Connection, entry: dict[str, Any], model_id: int, snapshot_id: int,
+) -> tuple[int, int]:
+    """Insert announcement-backed price_component and model_capability rows.
+
+    Rebuild pattern mirrors store.prices.promote_prices: provider_blog rows are
+    deleted and re-inserted each run, so promotion is idempotent and never
+    accumulates duplicates across pipeline runs.
+    """
+    prices_created = 0
+    for row in _evidence_price_rows(entry):
+        conn.execute(
+            """INSERT INTO price_component
+                 (model_id, provider_surface_id, source_id, component, unit, currency,
+                  amount, normalized_usd_per_1m_tokens, tier_condition_json,
+                  valid_from, valid_to, source_snapshot_id)
+               VALUES (?, NULL, 'provider_blog', ?, ?, 'USD', ?, ?, ?, ?, ?, ?)""",
+            (model_id, row["component"], row["unit"], row["amount"], row["normalized"],
+             row["tier_condition_json"], row["valid_from"], row["valid_to"], snapshot_id),
+        )
+        prices_created += 1
+
+    capabilities_created = 0
+    for capability, value in _evidence_capability_rows(entry["evidence"]):
+        existing = conn.execute(
+            "SELECT 1 FROM model_capability WHERE model_id = ? AND capability = ?",
+            (model_id, capability),
+        ).fetchone()
+        if existing:
+            continue
+        conn.execute(
+            """INSERT INTO model_capability
+                 (model_id, capability, value, source_snapshot_id, confidence)
+               VALUES (?, ?, ?, ?, 1.0)""",
+            (model_id, capability, value, snapshot_id),
+        )
+        capabilities_created += 1
+    return prices_created, capabilities_created
+
+
+def promote_launch_registry(conn: sqlite3.Connection) -> dict[str, int]:
+    """Mint curated launch-window models and attach their announcement evidence."""
+    now = utcnow()
+    models_created = 0
+    aliases_created = 0
+    snapshots_created = 0
+    prices_created = 0
+    capabilities_created = 0
+
+    conn.execute("DELETE FROM price_component WHERE source_id = 'provider_blog'")
+    conn.execute(
+        """DELETE FROM model_capability
+           WHERE source_snapshot_id IN
+             (SELECT id FROM source_snapshot WHERE source_id = 'provider_blog')"""
+    )
+
+    for entry in LAUNCH_ENTRIES:
+        model_id, created = _mint(conn, entry, now)
+        models_created += int(created)
+
+        for alias_string, alias_kind in entry["aliases"]:
+            aliases_created += _write_alias(
+                conn, source_id="provider_blog", alias_string=alias_string,
+                alias_normalized=normalize_alias(alias_string), alias_kind=alias_kind,
+                model_id=model_id, method="exact_provider_doc", confidence=1.0, now=now,
+            )
+
+        evidence = {
+            **entry["evidence"],
+            "canonical_slug": entry["canonical_slug"],
+            "display_name": entry["display_name"],
+        }
+        capture = capture_announcement(conn, evidence)
+        snapshots_created += int(capture["created"])
+
+        entry_prices, entry_caps = _promote_evidence_facts(
+            conn, entry, model_id, int(capture["snapshot_id"])
+        )
+        prices_created += entry_prices
+        capabilities_created += entry_caps
+
+    conn.commit()
+    return {
+        "entries": len(LAUNCH_ENTRIES),
+        "models_created": models_created,
+        "aliases_created": aliases_created,
+        "snapshots_created": snapshots_created,
+        "prices_created": prices_created,
+        "capabilities_created": capabilities_created,
+    }
+
+
+if __name__ == "__main__":
+    with connect() as c:
+        print(promote_launch_registry(c))

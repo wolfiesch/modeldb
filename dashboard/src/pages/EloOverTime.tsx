@@ -6,7 +6,7 @@ import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import { useSearchParams } from 'react-router'
 import ChartState, { resolveChartStatus } from '../components/ChartState'
-import { fmtDate, fmtElo, fmtScore } from '../lib/format'
+import { fmtBenchmarkScore, fmtDate } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 
 interface TimeseriesSeries {
@@ -40,7 +40,12 @@ function selectedModelsFromParam(params: URLSearchParams): Set<number> | null {
 const DEFAULT_BENCHMARK_ID = 'lmarena_text_overall'
 
 function formatBenchmarkValue(value: number, benchmarkId: string) {
-  return benchmarkId.startsWith('lmarena') ? fmtElo(value) : fmtScore(value)
+  const metric = benchmarkId.startsWith('lmarena')
+    ? 'elo'
+    : benchmarkId === 'epoch_capabilities_index'
+      ? 'index'
+      : 'percent'
+  return fmtBenchmarkScore(value, metric)
 }
 
 const TIMELINE_BENCHMARKS = [
@@ -309,7 +314,11 @@ export default function EloOverTime() {
       yAxis: {
         type: 'value',
         scale: true,
-        name: benchId.startsWith('lmarena') ? 'ELO' : 'Score',
+        name: benchId.startsWith('lmarena')
+          ? 'ELO'
+          : benchId === 'epoch_capabilities_index'
+            ? 'Index'
+            : 'Score (%)',
         axisLabel: { color: '#a3a3a3', formatter: (value: number) => formatBenchmarkValue(value, benchId) },
         nameTextStyle: { color: '#737373' },
         splitLine: { lineStyle: { color: '#262626' } },

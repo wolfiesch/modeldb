@@ -38,6 +38,7 @@ PARSER_SPECS: tuple[ParserSpec, ...] = (
     ParserSpec("swebench", "ingest.sources.swebench", "SWEBenchParser"),
     ParserSpec("aider", "ingest.sources.aider", "AiderParser"),
     ParserSpec("deepswe", "ingest.sources.deepswe", "DeepSWEParser"),
+    ParserSpec("frontierswe", "ingest.sources.frontierswe", "FrontierSWEParser"),
     ParserSpec("livebench", "ingest.sources.livebench", "LiveBenchParser"),
     ParserSpec("open_llm_lb", "ingest.sources.open_llm_lb", "OpenLLMLBParser"),
     ParserSpec("openvlm", "ingest.sources.openvlm", "OpenVLMParser"),
@@ -145,9 +146,19 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     conn = connect()
+    failures: list[str] = []
+    attempted = 0
     try:
         for source_id in iter_requested(args.source, registry):
-            print(run_source(source_id, registry[source_id], conn))
+            attempted += 1
+            try:
+                print(run_source(source_id, registry[source_id], conn))
+            except Exception as exc:
+                # Keep extracting the remaining sources; cron visibility comes
+                # from the per-source FAILED line and the exit code below.
+                conn.rollback()
+                failures.append(source_id)
+                print(f"{source_id}: FAILED ({exc})")
 
         if args.source == "all":
             for source_id in sorted(set(unavailable) & known_sources):
@@ -155,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         conn.close()
 
+    if attempted and len(failures) == attempted:
+        return 1
     return 0
 
 

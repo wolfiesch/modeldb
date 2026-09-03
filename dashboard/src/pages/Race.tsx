@@ -9,7 +9,7 @@ import {
   type BenchmarkTimeseriesFile,
   type EloFile,
 } from '../lib/data'
-import { fmtDate, fmtElo } from '../lib/format'
+import { fmtBenchmarkScore, fmtDate } from '../lib/format'
 import { labLabel } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import '../lib/useECharts'
@@ -28,7 +28,7 @@ type BenchmarkKey =
   | 'math_level_5'
   | 'epoch_capabilities_index'
 type MetricKind = 'elo' | 'score'
-type ValueFormat = 'elo' | 'fractionPercent' | 'percentScore' | 'index'
+type ValueFormat = 'elo' | 'percent' | 'index'
 type RaceDataset = EloFile | BenchmarkTimeseriesFile
 type EloSeries = EloFile['series'][number]
 type BenchmarkTimeseriesSeries = BenchmarkTimeseriesFile['series'][number]
@@ -197,7 +197,7 @@ export default function Race() {
     if (!activeData || currentTime == null) return []
     return topAtTime(activeData, metric, currentTime, TOP_N)
   }, [activeData, currentTime, metric])
-  const valueFormat = valueFormatForRows(regime, rows)
+  const valueFormat = valueFormatForRegime(regime)
   const dateLabel = currentTime == null ? 'No date' : fmtDate(new Date(currentTime).toISOString().slice(0, 10))
   const sourceLabel = activeBenchmark?.key ?? regime.description
   const chartStatus = resolveChartStatus({
@@ -302,7 +302,7 @@ export default function Race() {
     const chart = chartInstanceRef.current
     if (activeData && nextTime != null && chart) {
       const nextRows = topAtTime(activeData, metric, nextTime, TOP_N)
-      const nextValueFormat = valueFormatForRows(regime, nextRows)
+      const nextValueFormat = valueFormatForRegime(regime)
       rowsRef.current = nextRows
       chart.resize()
       chart.setOption(raceOption(nextRows, false, regime, nextValueFormat, stepMs), { replaceMerge: ['yAxis', 'series'] })
@@ -567,30 +567,18 @@ function latestAtOrBefore(times: number[], values: number[], target: number): nu
   return Number.isFinite(value) ? value : null
 }
 
-function valueFormatForRows(regime: Regime, rows: RaceRow[]): ValueFormat {
+function valueFormatForRegime(regime: Regime): ValueFormat {
   if (regime.source === 'elo') return 'elo'
-  if (regime.kind === 'knowledge') return 'index'
-  const max = Math.max(0, ...rows.map((row) => row.value))
-  return max <= 1.5 ? 'fractionPercent' : 'percentScore'
+  return regime.kind === 'knowledge' ? 'index' : 'percent'
 }
 
 function formatMetric(value: number, format: ValueFormat): string {
-  switch (format) {
-    case 'elo':
-      return fmtElo(value)
-    case 'fractionPercent':
-      return `${(value * 100).toFixed(1)}%`
-    case 'percentScore':
-      return `${value.toFixed(1)}%`
-    case 'index':
-      return value >= 100 ? fmtElo(value) : value.toFixed(1)
-  }
+  return fmtBenchmarkScore(value, format)
 }
 
 function niceAxisMax(rows: RaceRow[], format: ValueFormat): number | undefined {
   const max = Math.max(0, ...rows.map((row) => row.value))
   if (max <= 0) return undefined
-  if (format === 'fractionPercent') return Math.min(1, Math.ceil(max * 10) / 10)
   const step = format === 'elo' || format === 'index' ? 100 : 10
   return Math.ceil(max / step) * step
 }

@@ -7,9 +7,10 @@ Usage:
 Ordering matters:
   1. ingest source parsers (models_dev, openrouter, epoch) -> source_model_record
   2. build_spine            -> canonical `model` rows + models.dev aliases
-  3. bridge_openrouter      -> OpenRouter + HF aliases onto the spine
-  4. promote_prices         -> price_component (needs spine aliases for link_model)
-  5. promote_benchmarks     -> benchmark + benchmark_result (needs spine aliases)
+  3. launch_registry        -> curated launch-window rows no catalog lists yet
+  4. bridge_openrouter      -> OpenRouter + HF aliases onto the spine
+  5. promote_prices         -> price_component (needs spine aliases for link_model)
+  6. promote_benchmarks     -> benchmark + benchmark_result (needs spine aliases)
 """
 from __future__ import annotations
 
@@ -30,9 +31,12 @@ from store.artificial_analysis import promote_artificial_analysis
 from store.omp_speedtest import promote_omp_speedtest
 from store.vllm import promote_vllm
 from store.deepswe import promote_deepswe
+from store.frontierswe import promote_frontierswe
 from store.arena import promote_arena
 from store.capabilities import promote_capabilities
-from store.announcement import capture_announcement, SONNET5_EVIDENCE
+from store.launch_registry import promote_launch_registry
+from store.launch_benchmarks import promote_launch_benchmarks
+from store.maintenance import relink_unlinked_benchmarks
 
 M1_SOURCES = (
     "models_dev",
@@ -42,6 +46,7 @@ M1_SOURCES = (
     "swebench",
     "aider",
     "deepswe",
+    "frontierswe",
     "openvlm",
     "bigcodebench",
     "vllm",
@@ -67,11 +72,17 @@ def run_pipeline(
                 if cls is None:
                     ingest_results.append(f"{src}: unavailable ({unavailable.get(src, '?')})")
                     continue
-                ingest_results.append(run_source(src, cls, conn))
+                try:
+                    ingest_results.append(run_source(src, cls, conn))
+                except Exception as exc:
+                    # One broken source must never freeze the whole refresh:
+                    # drop its partial writes, record the failure, keep going.
+                    conn.rollback()
+                    ingest_results.append(f"{src}: FAILED ({exc})")
             summary["ingest"] = ingest_results
 
         summary["spine"] = build_spine(conn)
-        summary["announcement"] = capture_announcement(conn, SONNET5_EVIDENCE)
+        summary["launch_registry"] = promote_launch_registry(conn)
         summary["bridge"] = bridge_openrouter_aliases(conn)
         summary["surfaces"] = promote_surfaces(conn)
         summary["artifacts"] = promote_artifacts(conn)
@@ -90,9 +101,12 @@ def run_pipeline(
         summary["open_llm_lb"] = promote_open_llm_lb(conn)
         summary["mteb"] = promote_mteb(conn)
         summary["deepswe"] = promote_deepswe(conn)
+        summary["frontierswe"] = promote_frontierswe(conn)
         summary["artificial_analysis"] = promote_artificial_analysis(conn)
         summary["omp_speedtest"] = promote_omp_speedtest(conn)
         summary["vllm"] = promote_vllm(conn)
+        summary["launch_benchmarks"] = promote_launch_benchmarks(conn)
+        summary["relink"] = relink_unlinked_benchmarks(conn)
         conn.commit()
     return summary
 

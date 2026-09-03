@@ -1,0 +1,4 @@
+Offloaded and checksum-verified on 2026-07-29 PDT.
+Destination: /srv/data/mac/AI-Data-Viz/db-backups on contabo-storage.taild04b86.ts.net
+Canonical index: ~/Projects/hostinger-vps-notes/STORAGE_MIGRATION.md
+Local source directory was deleted with user approval.

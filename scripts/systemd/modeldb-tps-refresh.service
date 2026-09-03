@@ -1,13 +1,14 @@
 [Unit]
 Description=Refresh modeldb TPS metrics and dashboard JSON
+OnFailure=modeldb-refresh-failure.service
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
-User=modeldb
-Group=modeldb
-Environment=HOME=/var/lib/modeldb
+User=wolfie
+Group=wolfie
+Environment=HOME=/home/wolfie
 Environment=MODELDB_REPO=/srv/modeldb
 Environment=STATIC_DIR=/srv/agent-webhook-hub/static/models
 Environment=OMP_TPS_ALLOW_PAID=1

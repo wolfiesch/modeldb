@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          # Floor of `requires-python = ">=3.12"` in pyproject.toml.
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      # pytest runs the suite but is not declared in requirements.txt or
+      # pyproject.toml; install it explicitly for CI only.
+      - run: pip install pytest
+      - run: python3 -m pytest tests/ -q
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      # Separate lockfiles: bun.lock at the repo root and in dashboard/.
+      - run: bun install
+      - run: bun install
+        working-directory: dashboard
+      - run: bun test
+        working-directory: dashboard
+      # oxlint is defined as `lint` in dashboard/package.json only;
+      # the root package.json has no lint script.
+      - run: bun run lint
+        working-directory: dashboard

@@ -6,6 +6,7 @@ import json
 from contextlib import closing
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -69,6 +70,7 @@ def _integrity_issues(db_path: Path, raw_root: Path) -> list[dict[str, Any]]:
         _append_overlapping_price_intervals(conn, issues)
         _append_missing_snapshot_payloads(conn, issues, raw_root)
         _append_missing_eval_conditions(conn, issues)
+        _append_stale_sources(conn, issues)
     return issues
 
 
@@ -183,6 +185,86 @@ def _append_missing_eval_conditions(conn: sqlite3.Connection, issues: list[dict[
     )
     for (result_id,) in rows:
         _warning(issues, "missing_benchmark_eval_condition", result_id=result_id)
+
+# Cadence keywords -> base interval in days. The stale window is deliberately
+# generous (3x cadence, at least 14 days): the warning flags sources that have
+# silently stopped refreshing, not sources that are merely a bit late.
+_CADENCE_KEYWORD_DAYS: tuple[tuple[str, float], ...] = (
+    ("hour", 1.0),
+    ("live", 1.0),
+    ("continuous", 1.0),
+    ("frequent", 1.0),
+    ("daily", 1.0),
+    ("periodic", 1.0),
+    ("weekly", 7.0),
+    ("month", 30.0),
+)
+
+# Cadences with no inferable schedule (release-driven, event-driven, maintained
+# archives) never imply staleness; a frozen archive must not warn forever.
+_CADENCE_UNSCHEDULED = ("frozen", "event", "release", "on-demand", "on demand",
+                        "on-change", "maintained", "on request")
+
+_STALE_WINDOW_MIN_DAYS = 14.0
+_STALE_WINDOW_MULTIPLIER = 3.0
+
+
+def _stale_window_days(cadence: str) -> float | None:
+    """Generous staleness window (days) for a cadence string, or None if unscheduled."""
+    text = cadence.strip().lower()
+    if not text:
+        return None
+    if any(marker in text for marker in _CADENCE_UNSCHEDULED):
+        return None
+    for keyword, base_days in _CADENCE_KEYWORD_DAYS:
+        if keyword in text:
+            return max(_STALE_WINDOW_MULTIPLIER * base_days, _STALE_WINDOW_MIN_DAYS)
+    return None
+
+
+def _append_stale_sources(conn: sqlite3.Connection, issues: list[dict[str, Any]]) -> None:
+    has_source_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'source'"
+    ).fetchone()
+    if not has_source_table:
+        return
+
+    now = datetime.now(timezone.utc)
+    rows = conn.execute(
+        """
+        SELECT id, update_cadence FROM source
+        WHERE update_cadence IS NOT NULL AND TRIM(update_cadence) != ''
+        ORDER BY id
+        """
+    )
+    for source_id, cadence in rows:
+        window = _stale_window_days(cadence)
+        if window is None:
+            continue
+        latest = conn.execute(
+            "SELECT MAX(fetched_at) FROM source_snapshot WHERE source_id = ?",
+            (source_id,),
+        ).fetchone()[0]
+        stale = latest is None
+        if latest:
+            try:
+                fetched = datetime.fromisoformat(latest)
+            except ValueError:
+                continue
+            if fetched.tzinfo is None:
+                fetched = fetched.replace(tzinfo=timezone.utc)
+            stale = (now - fetched).total_seconds() / 86400 > window
+        if stale:
+            # Non-blocking by design: staleness must surface without freezing
+            # the publish pipeline (warnings never set `blocked`).
+            _warning(
+                issues,
+                "stale_source",
+                source_id=source_id,
+                update_cadence=cadence,
+                latest_snapshot_at=latest,
+                stale_after_days=window,
+            )
 
 
 def _result_counts(conn: sqlite3.Connection) -> dict[str, int]:

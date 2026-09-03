@@ -234,6 +234,8 @@ CREATE TABLE IF NOT EXISTS price_component_observation (
 
 CREATE INDEX IF NOT EXISTS idx_price_lookup
   ON price_component (model_id, provider_surface_id, component, valid_from, valid_to);
+CREATE INDEX IF NOT EXISTS idx_price_surface
+  ON price_component (provider_surface_id);
 
 CREATE TABLE IF NOT EXISTS benchmark (
   id             TEXT PRIMARY KEY,               -- 'gpqa_diamond','mmlu_pro','swe_bench_verified','lmarena_text_overall'

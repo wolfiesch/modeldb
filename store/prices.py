@@ -18,9 +18,14 @@ _PRICE_COLUMNS = (
 _SOURCE_RECORD_SQL = """
     SELECT smr.source_snapshot_id, smr.source_model_id, smr.parsed_fields_json
     FROM source_model_record smr
-    JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
-    WHERE ss.source_id = ?
+    WHERE smr.source_snapshot_id = (
+        SELECT MAX(id) FROM source_snapshot WHERE source_id = ?
+    )
 """
+
+# Mirrors store/spine.py: each promotion consumes only the newest snapshot per
+# source. Reading every historical snapshot re-inserted each refresh's records
+# as extra overlapping price windows.
 
 _MODELS_DEV_COMPONENTS = (
     ("cost_input", "input_token"),

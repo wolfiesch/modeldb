@@ -18,7 +18,7 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ingest.base import utcnow
 from resolve.normalize import canonical_org, extract_modifiers, normalize_alias
@@ -32,17 +32,117 @@ FIRST_PARTY_PROVIDERS = {
     "deepseek", "alibaba", "zhipuai", "zai", "moonshotai", "minimax",
     "cohere", "perplexity", "stepfun", "upstage", "xiaomi",
     "sarvam", "baidu", "tencent", "poolside", "sakana", "nova",
+    "thinkingmachines", "meituan",
 }
 
 # models.dev also lists re-export namespaces that mirror other developers'
 # models. They are useful source facts, but they must not mint canonical rows.
 REEXPORT_ONLY_PROVIDERS = {"nvidia", "inceptron"}
 
+# Some first-party developers ship through regional and subscription catalogs
+# (`alibaba-cn`, `alibaba-token-plan`, `tencent-tokenhub`) instead of, or weeks
+# before, their plain namespace. Those catalogs are the developer's own surface,
+# but they also resell other vendors' models, so they mint canonical identity
+# only for ids that belong to the developer itself (see `_mints_in_namespace`).
+# Minting `alibaba-cn/qwen3.7-flash` verbatim would also create a second
+# canonical row once `alibaba/qwen3.7-flash` appears, so the slug always carries
+# the developer prefix.
+MIXED_FIRST_PARTY_NAMESPACES = {
+    "alibaba-cn": "alibaba",
+    "alibaba-coding-plan": "alibaba",
+    "alibaba-coding-plan-cn": "alibaba",
+    "alibaba-token-plan": "alibaba",
+    "alibaba-token-plan-cn": "alibaba",
+    "tencent-coding-plan": "tencent",
+    "tencent-token-plan": "tencent",
+    "tencent-tokenhub": "tencent",
+}
+
+# Single-vendor product namespaces: the whole namespace is one developer's own
+# catalog (`longcat` is Meituan's API), so every id in it mints.
+PRODUCT_NAMESPACES = {"longcat": "meituan"}
+
+_VERSION_SUFFIX_RE = re.compile(r"[\d.]+$")
+
+
+def first_party_provider_id(provider_id: str) -> str:
+    """Map a models.dev namespace onto the developer provider id that owns it."""
+    if provider_id in MIXED_FIRST_PARTY_NAMESPACES:
+        return MIXED_FIRST_PARTY_NAMESPACES[provider_id]
+    return PRODUCT_NAMESPACES.get(provider_id, provider_id)
+
+
+def canonical_slug_for(source_model_id: str) -> str:
+    """Canonical slug for a first-party models.dev id, namespace-normalized."""
+    provider_id, _, model_part = source_model_id.partition("/")
+    nested_creator, nested_sep, nested_rest = model_part.partition("/")
+    if nested_sep and is_first_party_provider(nested_creator):
+        # Nested ids carry the creator namespace inside the model path
+        # (`thinkingmachines/thinkingmachines/Inkling`,
+        # `poolside/poolside/laguna-m.1`). Canonical identity is the
+        # creator-canonical `creator/model` slug — never a 3-segment
+        # host-prefixed one; the host string attaches as an alias instead.
+        return f"{canonical_org(nested_creator)}/{nested_rest}"
+    developer_provider = first_party_provider_id(provider_id)
+    if not model_part or developer_provider == provider_id:
+        return source_model_id
+    return f"{developer_provider}/{model_part}"
+
 
 def is_first_party_provider(provider_id: str) -> bool:
     """Return whether a models.dev provider id can mint canonical model rows."""
-    provider = canonical_org(provider_id)
+    provider = canonical_org(first_party_provider_id(provider_id))
     return provider in FIRST_PARTY_PROVIDERS and provider not in REEXPORT_ONLY_PROVIDERS
+
+
+def _vendor_token(segment: str) -> str:
+    """Identity token of a model-id segment: `qwen3.7` -> `qwen`, `2.0` -> ``."""
+    return _VERSION_SUFFIX_RE.sub("", segment.split("-", 1)[0].lower())
+
+
+def learn_vendor_tokens(source_model_ids: Iterable[str]) -> dict[str, set[str]]:
+    """Map model-id tokens to the developers that ship them under their own name.
+
+    Learned from the catalog itself rather than a hand-kept vendor list: every
+    plain first-party namespace (`deepseek/deepseek-v4-flash`,
+    `moonshotai/kimi-k2.5`, `zhipuai/glm-5`) teaches that `deepseek`, `kimi` and
+    `glm` name those developers' models. A mixed catalog that lists the same
+    token is reselling, not releasing.
+    """
+    tokens: dict[str, set[str]] = {}
+    for source_model_id in source_model_ids:
+        provider_id, _, bare = source_model_id.partition("/")
+        if not bare or "/" in bare:
+            continue
+        if provider_id in MIXED_FIRST_PARTY_NAMESPACES or provider_id in PRODUCT_NAMESPACES:
+            continue
+        if not is_first_party_provider(provider_id):
+            continue
+        token = _vendor_token(bare)
+        if token:
+            tokens.setdefault(token, set()).add(canonical_org(provider_id))
+    return tokens
+
+
+def _mints_in_namespace(
+    provider_id: str, bare_id: str, developer_id: str, vendor_tokens: dict[str, set[str]]
+) -> bool:
+    """Whether a mixed-catalog id is the catalog owner's own model.
+
+    `alibaba-cn` lists Alibaba's `qwen3.7-flash` next to resold
+    `deepseek-v4-flash`, `kimi-k2.5` and `siliconflow/deepseek-v3.2`. Only the
+    first may mint an `alibaba/...` canonical row.
+    """
+    if provider_id not in MIXED_FIRST_PARTY_NAMESPACES:
+        return True
+    if "/" in bare_id:
+        # Nested path (`siliconflow/deepseek-v3.2`) is always a resold listing.
+        return False
+    for segment in bare_id.split("-", 2)[:2]:
+        owners = vendor_tokens.get(_vendor_token(segment))
+        if owners and developer_id not in owners:
+            return False
+    return True
 
 
 def find_alias_collisions(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -406,6 +506,11 @@ def _aa_identity_variants(identity: str) -> list[str]:
 def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
     """Create canonical `model` rows + aliases from models.dev first-party records.
 
+    Only the newest models.dev snapshot mints identity: the catalog renames ids
+    (`thinkingmachines/inkling` -> `thinkingmachines/thinkingmachines/Inkling`),
+    and replaying every historical snapshot would mint one canonical row per
+    spelling. Rows minted by earlier runs are never removed here.
+
     Idempotent on canonical_slug and (source_id, alias_string). Returns a summary.
     """
     now = utcnow()
@@ -413,21 +518,53 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
         """
         SELECT smr.source_model_id, smr.display_name, smr.parsed_fields_json
         FROM source_model_record smr
-        JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
-        WHERE ss.source_id = 'models_dev'
+        WHERE smr.source_snapshot_id = (
+            SELECT MAX(id) FROM source_snapshot WHERE source_id = 'models_dev'
+        )
         """
     ).fetchall()
 
+    vendor_tokens = learn_vendor_tokens(row[0] for row in rows)
     models_created = 0
     aliases_created = 0
+    variant_specs: list[tuple[str, str]] = []
+    resold_specs: list[str] = []
     for source_model_id, display_name, parsed_json in rows:
         provider_id = source_model_id.split("/", 1)[0]
         if not is_first_party_provider(provider_id):
             continue
+        if ":" in source_model_id:
+            # `<id>:peft:262144`-style suffixes are serving variants, not distinct
+            # releases. Attach them as aliases once every base row exists.
+            variant_specs.append(
+                (source_model_id, canonical_slug_for(source_model_id.split(":", 1)[0]))
+            )
+            continue
+
+        bare_id = source_model_id.partition("/")[2]
+        if bare_id and not _mints_in_namespace(
+            provider_id, bare_id, canonical_org(first_party_provider_id(provider_id)),
+            vendor_tokens,
+        ):
+            # A mixed catalog reselling another vendor: keep it as an alias fact.
+            resold_specs.append(source_model_id)
+            continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
 
-        canonical_slug = source_model_id  # already provider/model; authoritative
-        developer_id = canonical_org(provider_id)
+        canonical_slug = canonical_slug_for(source_model_id)
+
+        if canonical_slug.count("/") > 1:
+            # Nested namespace we cannot attribute to a first-party creator
+            # (`host/other-org/model`): minting verbatim would break the locked
+            # `{developer}/{family}-{variant}` slug format. Keep the record as
+            # an alias fact via the re-export path below.
+            resold_specs.append(source_model_id)
+            continue
+        # The leading canonical_slug segment is always the creator: nested ids
+        # are creator-stripped in canonical_slug_for, and namespace-mapped
+        # slugs (`alibaba-cn/...` -> `alibaba/...`) carry the developer.
+        developer_provider = canonical_slug.partition("/")[0]
+        developer_id = canonical_org(developer_provider)
         release_date = pf.get("release_date")
         snapshot_date = release_date  # models.dev release_date is the dated snapshot
 
@@ -436,7 +573,7 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
         if existing:
             model_id = existing[0]
         else:
-            _ensure_org(conn, developer_id, provider_id)
+            _ensure_org(conn, developer_id, developer_provider)
             cur = conn.execute(
                 """
                 INSERT INTO model (canonical_slug, developer_id, family, tier_or_variant,
@@ -466,10 +603,23 @@ def build_spine(conn: sqlite3.Connection) -> dict[str, int]:
                 model_id=model_id, method="exact_provider_doc", confidence=1.0, now=now,
             )
 
+    for alias_str, base_slug in variant_specs:
+        base = conn.execute("SELECT id FROM model WHERE canonical_slug = ?", (base_slug,)).fetchone()
+        if base is None:
+            continue
+        aliases_created += _write_alias(
+            conn, source_id="models_dev", alias_string=alias_str,
+            alias_normalized=normalize_alias(alias_str), alias_kind="variant_id",
+            model_id=base[0], method="variant_suffix_of_canonical", confidence=0.9, now=now,
+        )
+
+    resold = set(resold_specs)
     reexport_aliases_created = 0
     for source_model_id, _display_name, parsed_json in rows:
         provider_id = source_model_id.split("/", 1)[0]
-        if provider_id not in REEXPORT_ONLY_PROVIDERS or "/" not in source_model_id:
+        if "/" not in source_model_id:
+            continue
+        if provider_id not in REEXPORT_ONLY_PROVIDERS and source_model_id not in resold:
             continue
         pf: dict[str, Any] = json.loads(parsed_json) if parsed_json else {}
         target_model_id = source_model_id.split("/", 1)[1]
@@ -580,7 +730,8 @@ def _suffix_reductions(identity: str) -> list[str]:
 
 
 def link_model(conn: sqlite3.Connection, *, source_id: str,
-               source_model_id: str, parsed_fields: dict[str, Any]) -> int | None:
+               source_model_id: str, parsed_fields: dict[str, Any],
+               exclude_model_id: int | None = None) -> int | None:
     """Return the canonical model_id for a source record, or None.
 
     Multi-pass, most-confident first:
@@ -588,6 +739,9 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
       2. normalized full form (provider/model)
       3. normalized bare model form (strip provider)
       4. Epoch-style: strip effort/quant modifiers (`_max`,`-high`,`fp8`) then bare match
+
+    ``exclude_model_id`` skips a model's own aliases (used by the namespace
+    repair so a multi-slash shell does not resolve onto itself).
     """
     # 1. exact alias hit. Artificial Analysis rows are third-party UUIDs or
     # provider-scoped names, so they must not resolve through bare display aliases
@@ -595,7 +749,8 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
     if source_id != "artificialanalysis":
         row = conn.execute(
             "SELECT model_id FROM model_alias WHERE alias_string = ? AND model_id IS NOT NULL "
-            "ORDER BY confidence DESC LIMIT 1", (source_model_id,)).fetchone()
+            "AND (model_id IS NOT ?) "
+            "ORDER BY confidence DESC LIMIT 1", (source_model_id, exclude_model_id)).fetchone()
         if row:
             return int(row[0])
 
@@ -629,6 +784,8 @@ def link_model(conn: sqlite3.Connection, *, source_id: str,
             "JOIN model m ON m.id = ma.model_id "
             "WHERE ma.alias_normalized = ? AND ma.model_id IS NOT NULL "
             "ORDER BY ma.confidence DESC", (cand,)).fetchall()
+        if exclude_model_id is not None:
+            matches = [match for match in matches if match[0] != exclude_model_id]
         if not matches:
             continue
         if org_hint:
@@ -651,6 +808,8 @@ def _org_hint(source_id: str, source_model_id: str,
         hf = parsed_fields.get("hugging_face_id")
         if not raw and hf and "/" in hf:
             raw = hf.split("/", 1)[0]
+    elif source_id == "frontierswe":
+        raw = parsed_fields.get("provider_name") or parsed_fields.get("developer_id")
     elif "/" in source_model_id:
         raw = source_model_id.split("/", 1)[0]
     return canonical_org(raw) if raw else None

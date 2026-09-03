@@ -9,8 +9,15 @@ _SOURCE_RECORD_SQL = """
     SELECT ss.source_id, smr.source_snapshot_id, smr.source_model_id, smr.parsed_fields_json
     FROM source_model_record smr
     JOIN source_snapshot ss ON ss.id = smr.source_snapshot_id
-    WHERE ss.source_id IN ('models_dev','openrouter')
+    WHERE ss.id IN (
+        SELECT MAX(id) FROM source_snapshot
+        WHERE source_id IN ('models_dev','openrouter')
+        GROUP BY source_id
+    )
 """
+
+# Mirrors store/spine.py: promote only the newest snapshot per source; reading
+# every historical snapshot minted one capability row per snapshot per refresh.
 
 _CAPABILITY_COLUMNS = "model_id, capability, value, source_snapshot_id, confidence"
 

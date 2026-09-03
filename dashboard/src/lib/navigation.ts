@@ -10,7 +10,6 @@ export const NAVIGATION: NavigationItem[] = [
   { to: '/lineage', label: 'Lineage & identity' },
   { to: '/elo', label: 'Arena over time' },
   { to: '/race', label: 'Leaderboard race' },
-  { to: '/consensus', label: 'Consensus matrix' },
   { to: '/efficiency', label: 'Speed vs Quality' },
   { to: '/benchmarks', label: 'Benchmarks' },
   { to: '/tps', label: 'TPS Streams' },

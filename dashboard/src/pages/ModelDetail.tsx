@@ -17,7 +17,7 @@ import { labLabel } from '../lib/labs'
 import { colorForDark, shortName } from '../lib/theme'
 import { useECharts } from '../lib/useECharts'
 import { useModelDrawer } from '../components/ModelDrawer'
-import { fmtDate, fmtElo, fmtPrice, fmtScore, fmtTokens } from '../lib/format'
+import { fmtBenchmarkScore, fmtDate, fmtElo, fmtPrice, fmtTokens } from '../lib/format'
 import type { EChartsCoreOption } from 'echarts/core'
 import type { Benchmark, BenchmarkResult, Model, RunOptionPrice, RunOptionVariant } from '../lib/data'
 
@@ -130,7 +130,7 @@ function evidenceResult(benchmark: Benchmark, modelId: number, score: BenchmarkR
 
 export default function ModelDetail() {
   const { slug = '' } = useParams()
-  const { data: models, loading } = useData(loadModels)
+  const { data: models, loading, error } = useData(loadModels)
   const { data: benchmarks } = useData(loadBenchmarks)
   const { data: prices } = useData(loadPrices)
   const { data: aliases } = useData(loadAliases)
@@ -189,6 +189,20 @@ export default function ModelDetail() {
   const chartRef = useECharts(eloOption)
 
   if (loading) return <div className="text-neutral-500">Loading…</div>
+  if (error) {
+    return (
+      <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-8 text-center">
+        <div className="mb-2 text-lg text-neutral-200">Failed to load model data</div>
+        <div className="mb-4 text-sm text-red-400">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:border-neutral-500"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
   if (!model) {
     return (
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-8 text-center">
@@ -238,12 +252,14 @@ export default function ModelDetail() {
     .filter(([id]) => !id.startsWith('lmarena_') && (benchById.get(id)?.higherIsBetter ?? 1) === 1)
     .map(([id, s]) => {
       const score = s.score ?? 0
-      const fraction = score <= 1 ? score : score <= 100 ? score / 100 : 0
+      const metric = s.metric ?? benchById.get(id)?.metricDefault
+      const width = score <= 100 ? score : 0
       return {
         id,
         name: benchById.get(id)?.name ?? id,
         score,
-        width: `${Math.max(0, Math.min(100, fraction * 100))}%`,
+        metric,
+        width: `${Math.max(0, Math.min(100, width))}%`,
       }
     })
     .filter((row) => row.score > 0)
@@ -266,7 +282,7 @@ export default function ModelDetail() {
         .toSorted(
           (a, b) =>
             Math.abs((a.scores.lmarena_text_overall?.score ?? 0) - currentElo) -
-              Math.abs((b.scores.lmarena_text_overall?.score ?? 0) - currentElo) ||
+            Math.abs((b.scores.lmarena_text_overall?.score ?? 0) - currentElo) ||
             (a.priceOut ?? Number.POSITIVE_INFINITY) - (b.priceOut ?? Number.POSITIVE_INFINITY),
         )[0]
       if (cheaperSimilar) alternativeCandidates.push({ label: 'Cheaper, similar quality', model: cheaperSimilar })
@@ -434,7 +450,9 @@ export default function ModelDetail() {
                   <div key={row.id}>
                     <div className="mb-1 flex items-center justify-between gap-3 text-xs">
                       <span className="truncate text-neutral-300">{row.name}</span>
-                      <span className="font-medium text-neutral-100">{fmtScore(row.score)}</span>
+                      <span className="font-medium text-neutral-100">
+                        {fmtBenchmarkScore(row.score, row.metric)}
+                      </span>
                     </div>
                     <div className="h-2 rounded-full bg-neutral-800">
                       <div
@@ -478,12 +496,12 @@ export default function ModelDetail() {
                     const score: BenchmarkResult = {
                       modelId: model.id,
                       score: s.score,
-                      metric: null,
+                      metric: s.metric,
                       rank: s.rank,
                       selfReported: s.selfReported,
                       measuredAt: s.measuredAt,
                     }
-                    const displayScore = id.startsWith('lmarena_') ? fmtElo(s.score) : fmtScore(s.score)
+                    const displayScore = fmtBenchmarkScore(s.score, s.metric ?? benchmark.metricDefault)
                     return (
                       <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
                         <td className="py-1.5 text-neutral-300">{benchmark.name}</td>
@@ -529,7 +547,7 @@ export default function ModelDetail() {
                             <tr key={id} className="border-t border-neutral-800/60 first:border-t-0">
                               <td className="py-1.5 text-neutral-300">{label}</td>
                               <td className="py-1.5 text-right text-neutral-100">
-                                {fmtScore(signal.score)}
+                                {fmtBenchmarkScore(signal.score, signal.metric)}
                               </td>
                             </tr>
                           ) : null,
@@ -540,9 +558,9 @@ export default function ModelDetail() {
                 ) : null}
 
                 {modelEnrichment?.medianOutputTokensPerSecond ||
-                modelEnrichment?.medianTimeToFirstTokenSeconds ||
-                modelEnrichment?.medianTimeToFirstAnswerToken ||
-                modelEnrichment?.artificialAnalysisReleaseDate ? (
+                  modelEnrichment?.medianTimeToFirstTokenSeconds ||
+                  modelEnrichment?.medianTimeToFirstAnswerToken ||
+                  modelEnrichment?.artificialAnalysisReleaseDate ? (
                   <div>
                     <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
                       Speed
