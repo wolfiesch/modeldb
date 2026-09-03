@@ -1072,6 +1072,8 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
             "pricing_standard": {"input_per_1m": 10.0, "output_per_1m": 50.0},
             "cache_pricing": {"cache_read_per_1m": 0.25},
             "cache_write_pricing": {"ttl_5m_per_1m": 12.50, "ttl_1h_per_1m": 20.00},
+            "context_window": 1000000,
+            "max_output": 128000,
             "availability": "restricted to trusted access programs developed in partnership with the US government.",
             "docs_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
             "pricing_docs_url": "https://platform.claude.com/docs/en/about-claude/pricing",

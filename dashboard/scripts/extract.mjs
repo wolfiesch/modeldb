@@ -64,26 +64,30 @@ function shortName(slug) {
 // --- ported from viz/lib/peers.mjs ------------------------------------------
 // Standard/base-tier price ($ per 1M tokens): MODE of non-zero normalized
 // values; ties break to the lower (base) price. Returns null if none.
-function standardPrice(modelId, component, sourceId = 'models_dev') {
- const rows = q(
-  `SELECT normalized_usd_per_1m_tokens AS v FROM price_component
-     WHERE model_id = ? AND source_id = ? AND component = ?
-       AND normalized_usd_per_1m_tokens IS NOT NULL
-       AND normalized_usd_per_1m_tokens > 0`,
-  [modelId, sourceId, component]
- )
- if (rows.length === 0) return null
- const counts = new Map()
- for (const { v } of rows) counts.set(v, (counts.get(v) ?? 0) + 1)
- let best = null
- let bestCount = -1
- for (const [value, count] of counts) {
-  if (count > bestCount || (count === bestCount && value < best)) {
-   best = value
-   bestCount = count
+function standardPrice(modelId, component, sourceId = null) {
+ const sources = sourceId ? [sourceId] : ['models_dev', 'provider_blog', 'openrouter', 'litellm']
+ for (const src of sources) {
+  const rows = q(
+   `SELECT normalized_usd_per_1m_tokens AS v FROM price_component
+      WHERE model_id = ? AND source_id = ? AND component = ?
+        AND normalized_usd_per_1m_tokens IS NOT NULL
+        AND normalized_usd_per_1m_tokens > 0`,
+   [modelId, src, component]
+  )
+  if (rows.length === 0) continue
+  const counts = new Map()
+  for (const { v } of rows) counts.set(v, (counts.get(v) ?? 0) + 1)
+  let best = null
+  let bestCount = -1
+  for (const [value, count] of counts) {
+   if (count > bestCount || (count === bestCount && value < best)) {
+    best = value
+    bestCount = count
+   }
   }
+  if (best != null) return best
  }
- return best
+ return null
 }
 
 function parseJsonObject(text) {
