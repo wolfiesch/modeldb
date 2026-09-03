@@ -30,6 +30,7 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
@@ -1039,8 +1040,10 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
                            "safeguards reducing false positives by 60% in cybersecurity.",
             "pricing_standard": {"input_per_1m": 10.0, "output_per_1m": 50.0},
             "cache_pricing": {"cache_read_per_1m": 0.25, "prior_cache_read_per_1m": 1.00},
+            "cache_write_pricing": {"ttl_5m_per_1m": 12.50, "ttl_1h_per_1m": 20.00},
             "availability": "generally available through the Anthropic API, Claude Code (defaults to High effort), and Claude.ai.",
             "docs_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "pricing_docs_url": "https://platform.claude.com/docs/en/about-claude/pricing",
         },
     },
     {
@@ -1066,8 +1069,12 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
             "release_date": "2026-09-01",
             "positioning": "Same underlying intelligence as Claude Fable 5.1, configured with "
                            "safeguards specialized for cybersecurity and life sciences.",
+            "pricing_standard": {"input_per_1m": 10.0, "output_per_1m": 50.0},
+            "cache_pricing": {"cache_read_per_1m": 0.25},
+            "cache_write_pricing": {"ttl_5m_per_1m": 12.50, "ttl_1h_per_1m": 20.00},
             "availability": "restricted to trusted access programs developed in partnership with the US government.",
             "docs_url": "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+            "pricing_docs_url": "https://platform.claude.com/docs/en/about-claude/pricing",
         },
     },
     {
@@ -1094,6 +1101,9 @@ LAUNCH_ENTRIES: tuple[dict[str, Any], ...] = (
                            "and multi-step reasoning. Third Flash release in six weeks.",
             "pricing_introductory": {"input_per_1m": 0.75, "output_per_1m": 3.75},
             "pricing_post_intro": {"input_per_1m": 1.50, "output_per_1m": 7.50, "effective_date": "2027-01-01"},
+            "context_window": 1_000_000,
+            "max_output": 64000,
+            "model_card_url": "https://deepmind.google/models/model-cards/gemini-3-8-flash/",
             "availability": "Google AI Studio, Gemini API, Android Studio, Antigravity, and Gemini Enterprise.",
             "docs_url": "https://ai.google.dev/gemini-api/docs/latest-model",
         },
@@ -1204,6 +1214,183 @@ def _mint(conn: sqlite3.Connection, entry: dict[str, Any], now: str) -> tuple[in
     assert model_id is not None  # sqlite3 sets lastrowid after a single-row INSERT
     return int(model_id), True
 
+def _shift_date(date_str: str, days: int) -> str | None:
+    from datetime import date, timedelta
+
+    try:
+        return (date.fromisoformat(date_str) + timedelta(days=days)).isoformat()
+    except ValueError:
+        return None
+
+
+def _day_after(date_str: str) -> str | None:
+    return _shift_date(date_str, 1)
+
+
+def _day_before(date_str: str) -> str | None:
+    return _shift_date(date_str, -1)
+
+
+def _evidence_price_rows(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Translate curated announcement pricing into price_component row values.
+
+    Only USD per-1M-token figures the announcement or the developer pricing docs
+    actually published become rows. Non-token or non-USD pricing (per-second
+    video, per-audio-minute, CNY) stays prose in the evidence payload, and
+    keys that reference ANOTHER model's price are ignored entirely.
+    """
+    evidence = entry["evidence"]
+    release = entry.get("release_date")
+    rows: list[dict[str, Any]] = []
+
+    def add(component: str, amount: float, *, valid_from: str | None,
+            valid_to: str | None = None, tier: dict[str, Any] | None = None) -> None:
+        rows.append({
+            "component": component,
+            "unit": "1m_tokens",
+            "amount": float(amount),
+            "normalized": float(amount),
+            "tier_condition_json": json.dumps(tier) if tier else None,
+            "valid_from": valid_from,
+            "valid_to": valid_to,
+        })
+
+    def token_pair(spec: dict[str, Any], *, valid_from: str | None,
+                   valid_to: str | None = None, tier: dict[str, Any] | None = None) -> None:
+        if "input_per_1m" in spec:
+            add("input_token", spec["input_per_1m"], valid_from=valid_from, valid_to=valid_to, tier=tier)
+        if "output_per_1m" in spec:
+            add("output_token", spec["output_per_1m"], valid_from=valid_from, valid_to=valid_to, tier=tier)
+
+    # Windowed introductory pricing, then the post-introduction rate. Windows
+    # never overlap: the intro ends the day before the successor rate starts.
+    intro = evidence.get("pricing_intro") or evidence.get("pricing_introductory")
+    post = evidence.get("pricing_post_intro")
+    through = None
+    post_start = None
+    if isinstance(post, dict):
+        post_start = post.get("effective_date")
+    if isinstance(intro, dict):
+        through = intro.get("through") or intro.get("through_date")
+        if through is None and post_start:
+            through = _day_before(str(post_start))
+        token_pair(intro, valid_from=release, valid_to=through)
+    if isinstance(post, dict):
+        if post_start is None and through:
+            post_start = _day_after(str(through))
+        token_pair(post, valid_from=post_start)
+    standard = evidence.get("pricing_standard")
+    if isinstance(standard, dict):
+        if isinstance(intro, dict) and through:
+            start = post.get("effective_date") if isinstance(post, dict) else None
+            token_pair(standard, valid_from=start or _day_after(str(through)))
+        else:
+            token_pair(standard, valid_from=release)
+
+    # Flat per-1M tables (input/output plus cache variants).
+    per1m = evidence.get("pricing_per_1m")
+    if isinstance(per1m, dict):
+        if "input" in per1m:
+            add("input_token", per1m["input"], valid_from=release)
+        if "output" in per1m:
+            add("output_token", per1m["output"], valid_from=release)
+        for key in ("input_cache_hit", "input_cache_read", "cache_read"):
+            if key in per1m:
+                add("cache_read", per1m[key], valid_from=release)
+        for key in ("input_cache_miss",):
+            if key in per1m:
+                add("input_token", per1m[key], valid_from=release)
+
+    # Tiered variants: long-context thresholds and program tiers.
+    long_ctx = evidence.get("long_context_pricing_per_1m")
+    if isinstance(long_ctx, dict) and "threshold_tokens" in long_ctx:
+        tier = {">=": int(long_ctx["threshold_tokens"])}
+        if "input" in long_ctx:
+            add("input_token", long_ctx["input"], valid_from=release, tier=tier)
+        if "output" in long_ctx:
+            add("output_token", long_ctx["output"], valid_from=release, tier=tier)
+        if "input_cache_hit" in long_ctx:
+            add("cache_read", long_ctx["input_cache_hit"], valid_from=release, tier=tier)
+    for key, program in (("pricing_per_1m_standard", "standard"), ("pricing_per_1m_contributor", "contributor")):
+        spec = evidence.get(key)
+        if isinstance(spec, dict):
+            tier = {"program": program}
+            if "input" in spec:
+                add("input_token", spec["input"], valid_from=release, tier=tier)
+            if "output" in spec:
+                add("output_token", spec["output"], valid_from=release, tier=tier)
+            if "input_cache_hit" in spec:
+                add("cache_read", spec["input_cache_hit"], valid_from=release, tier=tier)
+
+    # Cache economics published separately from base pricing.
+    cache = evidence.get("cache_pricing")
+    if isinstance(cache, dict) and "cache_read_per_1m" in cache:
+        add("cache_read", cache["cache_read_per_1m"], valid_from=release)
+    writes = evidence.get("cache_write_pricing")
+    if isinstance(writes, dict):
+        if "ttl_5m_per_1m" in writes:
+            add("cache_write", writes["ttl_5m_per_1m"], valid_from=release, tier={"ttl": "5m"})
+        if "ttl_1h_per_1m" in writes:
+            add("cache_write", writes["ttl_1h_per_1m"], valid_from=release, tier={"ttl": "1h"})
+
+    return rows
+
+
+def _evidence_capability_rows(evidence: dict[str, Any]) -> list[tuple[str, str]]:
+    """Context/output limits stated in the announcement become model_capability rows."""
+    capabilities: list[tuple[str, str]] = []
+    context = evidence.get("context_window", evidence.get("context_tokens"))
+    if context is None and isinstance(evidence.get("context"), dict):
+        context = evidence["context"].get("input_tokens")
+    if isinstance(context, int) and context > 0:
+        capabilities.append(("context_window", str(context)))
+    max_output = evidence.get("max_output")
+    if max_output is None and isinstance(evidence.get("context"), dict):
+        max_output = evidence["context"].get("max_output_tokens")
+    if isinstance(max_output, int) and max_output > 0:
+        capabilities.append(("max_output", str(max_output)))
+    return capabilities
+
+
+def _promote_evidence_facts(
+    conn: sqlite3.Connection, entry: dict[str, Any], model_id: int, snapshot_id: int,
+) -> tuple[int, int]:
+    """Insert announcement-backed price_component and model_capability rows.
+
+    Rebuild pattern mirrors store.prices.promote_prices: provider_blog rows are
+    deleted and re-inserted each run, so promotion is idempotent and never
+    accumulates duplicates across pipeline runs.
+    """
+    prices_created = 0
+    for row in _evidence_price_rows(entry):
+        conn.execute(
+            """INSERT INTO price_component
+                 (model_id, provider_surface_id, source_id, component, unit, currency,
+                  amount, normalized_usd_per_1m_tokens, tier_condition_json,
+                  valid_from, valid_to, source_snapshot_id)
+               VALUES (?, NULL, 'provider_blog', ?, ?, 'USD', ?, ?, ?, ?, ?, ?)""",
+            (model_id, row["component"], row["unit"], row["amount"], row["normalized"],
+             row["tier_condition_json"], row["valid_from"], row["valid_to"], snapshot_id),
+        )
+        prices_created += 1
+
+    capabilities_created = 0
+    for capability, value in _evidence_capability_rows(entry["evidence"]):
+        existing = conn.execute(
+            "SELECT 1 FROM model_capability WHERE model_id = ? AND capability = ?",
+            (model_id, capability),
+        ).fetchone()
+        if existing:
+            continue
+        conn.execute(
+            """INSERT INTO model_capability
+                 (model_id, capability, value, source_snapshot_id, confidence)
+               VALUES (?, ?, ?, ?, 1.0)""",
+            (model_id, capability, value, snapshot_id),
+        )
+        capabilities_created += 1
+    return prices_created, capabilities_created
+
 
 def promote_launch_registry(conn: sqlite3.Connection) -> dict[str, int]:
     """Mint curated launch-window models and attach their announcement evidence."""
@@ -1211,6 +1398,15 @@ def promote_launch_registry(conn: sqlite3.Connection) -> dict[str, int]:
     models_created = 0
     aliases_created = 0
     snapshots_created = 0
+    prices_created = 0
+    capabilities_created = 0
+
+    conn.execute("DELETE FROM price_component WHERE source_id = 'provider_blog'")
+    conn.execute(
+        """DELETE FROM model_capability
+           WHERE source_snapshot_id IN
+             (SELECT id FROM source_snapshot WHERE source_id = 'provider_blog')"""
+    )
 
     for entry in LAUNCH_ENTRIES:
         model_id, created = _mint(conn, entry, now)
@@ -1228,7 +1424,14 @@ def promote_launch_registry(conn: sqlite3.Connection) -> dict[str, int]:
             "canonical_slug": entry["canonical_slug"],
             "display_name": entry["display_name"],
         }
-        snapshots_created += int(capture_announcement(conn, evidence)["created"])
+        capture = capture_announcement(conn, evidence)
+        snapshots_created += int(capture["created"])
+
+        entry_prices, entry_caps = _promote_evidence_facts(
+            conn, entry, model_id, int(capture["snapshot_id"])
+        )
+        prices_created += entry_prices
+        capabilities_created += entry_caps
 
     conn.commit()
     return {
@@ -1236,6 +1439,8 @@ def promote_launch_registry(conn: sqlite3.Connection) -> dict[str, int]:
         "models_created": models_created,
         "aliases_created": aliases_created,
         "snapshots_created": snapshots_created,
+        "prices_created": prices_created,
+        "capabilities_created": capabilities_created,
     }
 
 

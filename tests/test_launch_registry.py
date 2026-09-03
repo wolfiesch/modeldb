@@ -38,6 +38,31 @@ FIXTURE_ENTRY = {
     },
 }
 
+PRICED_ENTRY = {
+    "canonical_slug": "globus/flare-1",
+    "display_name": "Flare 1",
+    "developer_id": "globus",
+    "family": "flare",
+    "generation": "1",
+    "tier_or_variant": "flagship",
+    "training_role": "reasoning",
+    "release_date": "2026-09-02",
+    "open_weights": False,
+    "confidence": "verified",
+    "aliases": (("flare-1", "bare_name"),),
+    "evidence": {
+        "source_url": "https://globus.example/flare-1",
+        "release_date": "2026-09-02",
+        "pricing_introductory": {"input_per_1m": 0.75, "output_per_1m": 3.75},
+        "pricing_post_intro": {
+            "input_per_1m": 1.50, "output_per_1m": 7.50, "effective_date": "2027-01-01",
+        },
+        "pricing_per_second": {"720p_usd": 0.10},
+        "context_window": 262144,
+        "max_output": 65536,
+    },
+}
+
 
 class LaunchRegistryPromotionTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -92,6 +117,89 @@ class LaunchRegistryPromotionTests(unittest.TestCase):
         # 3 registry aliases + the display-name alias written by the evidence capture
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) FROM model_alias").fetchone()[0], 4
+        )
+
+    def test_promotes_evidence_prices_with_validity_windows(self) -> None:
+        for patcher in (mock.patch.object(launch_registry, "LAUNCH_ENTRIES", (PRICED_ENTRY,)),):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        summary = launch_registry.promote_launch_registry(self.conn)
+
+        self.assertEqual(summary["prices_created"], 4)
+        self.assertEqual(summary["capabilities_created"], 2)
+
+        rows = self.conn.execute(
+            "SELECT component, amount, valid_from, valid_to, tier_condition_json "
+            "FROM price_component WHERE source_id='provider_blog' "
+            "ORDER BY component, valid_from"
+        ).fetchall()
+        self.assertEqual(
+            rows,
+            [
+                ("input_token", 0.75, "2026-09-02", "2026-12-31", None),
+                ("input_token", 1.50, "2027-01-01", None, None),
+                ("output_token", 3.75, "2026-09-02", "2026-12-31", None),
+                ("output_token", 7.50, "2027-01-01", None, None),
+            ],
+        )
+        # Non-token pricing never becomes a row.
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM price_component WHERE unit != '1m_tokens'"
+            ).fetchone()[0], 0,
+        )
+        caps = self.conn.execute(
+            "SELECT capability, value FROM model_capability ORDER BY capability"
+        ).fetchall()
+        self.assertEqual(caps, [("context_window", "262144"), ("max_output", "65536")])
+
+    def test_price_promotion_is_idempotent_across_runs(self) -> None:
+        for patcher in (mock.patch.object(launch_registry, "LAUNCH_ENTRIES", (PRICED_ENTRY,)),):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        launch_registry.promote_launch_registry(self.conn)
+        second = launch_registry.promote_launch_registry(self.conn)
+
+        self.assertEqual(second["prices_created"], 4)
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM price_component WHERE source_id='provider_blog'"
+            ).fetchone()[0], 4,
+        )
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM model_capability").fetchone()[0], 2
+        )
+
+    def test_intro_then_standard_window_uses_day_after(self) -> None:
+        entry = {
+            **PRICED_ENTRY,
+            "release_date": "2026-08-01",
+            "evidence": {
+                **PRICED_ENTRY["evidence"],
+                "release_date": "2026-08-01",
+                "pricing_introductory": None,
+                "pricing_post_intro": None,
+                "pricing_intro": {"input_per_1m": 2, "output_per_1m": 10, "through": "2026-08-31"},
+                "pricing_standard": {"input_per_1m": 3, "output_per_1m": 15},
+            },
+        }
+        for patcher in (mock.patch.object(launch_registry, "LAUNCH_ENTRIES", (entry,)),):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        launch_registry.promote_launch_registry(self.conn)
+
+        rows = self.conn.execute(
+            "SELECT component, amount, valid_from, valid_to FROM price_component "
+            "WHERE source_id='provider_blog' ORDER BY component, valid_from"
+        ).fetchall()
+        self.assertEqual(
+            rows,
+            [
+                ("input_token", 2.0, "2026-08-01", "2026-08-31"),
+                ("input_token", 3.0, "2026-09-01", None),
+                ("output_token", 10.0, "2026-08-01", "2026-08-31"),
+                ("output_token", 15.0, "2026-09-01", None),
+            ],
         )
 
     def test_registry_row_is_resolvable_by_link_model(self) -> None:

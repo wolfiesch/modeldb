@@ -844,7 +844,7 @@ def promote_launch_benchmarks(conn: sqlite3.Connection) -> dict[str, int]:
     """Write vendor-published launch eval tables as self-reported benchmark facts."""
     now = utcnow()
     benchmarks_added = _upsert_benchmark_catalog(conn)
-    snapshots_created = inserted = skipped_cells = unresolved = 0
+    snapshots_created = inserted = skipped_cells = unresolved = unknown_benchmarks = 0
 
     for entry in LAUNCH_BENCHMARK_SETS:
         snap, created = _snapshot(conn, entry, now)
@@ -854,6 +854,13 @@ def promote_launch_benchmarks(conn: sqlite3.Connection) -> dict[str, int]:
         ids = _model_ids(conn, entry)
         base_condition = entry.get("row_condition", {})
         measured_at = entry["published_at"]
+        known_benchmarks = {
+            row[0] for row in conn.execute(
+                "SELECT id FROM benchmark WHERE id IN "
+                "(SELECT DISTINCT value FROM json_each(?))",
+                (json.dumps([row[0] for row in entry["rows"]]),),
+            )
+        }
 
         for bench_id, printed_label, metric, values, row_condition in entry["rows"]:
             if len(values) != len(entry["columns"]):
@@ -865,6 +872,13 @@ def promote_launch_benchmarks(conn: sqlite3.Connection) -> dict[str, int]:
                 slug = col.get("model_slug")
                 if not slug or value is None:
                     skipped_cells += 1
+                    continue
+                if bench_id not in known_benchmarks:
+                    # Reused catalog ids are minted by the promoter that owns the
+                    # benchmark (swebench catalog, Artificial Analysis, ...). On a
+                    # fresh no-network bootstrap those have not run yet; skip now
+                    unresolved += 1
+                    unknown_benchmarks += 1
                     continue
                 model_id = ids.get(slug)
                 if model_id is None:
@@ -897,6 +911,7 @@ def promote_launch_benchmarks(conn: sqlite3.Connection) -> dict[str, int]:
         "results_inserted": inserted,
         "comparison_or_blank_cells": skipped_cells,
         "unresolved_models": unresolved,
+        "unknown_benchmarks": unknown_benchmarks,
         "known_gaps": len(KNOWN_BENCHMARK_GAPS),
     }
 
