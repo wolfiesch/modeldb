@@ -82,6 +82,12 @@ The production host serves a static directory through Caddy. Deploy the built cl
 rsync -avz --delete --exclude data/ dashboard/dist/ "$MODELDB_DEPLOY_TARGET"
 ```
 
+The build also writes `dist/<route>/index.html` for each route in `dashboard/src/lib/routeMeta.ts`, carrying that route's title, description, and canonical URL so crawlers receive them without running JavaScript. The static server must try that file before the SPA fallback:
+
+```caddy
+try_files {path} {path}/index.html /index.html
+```
+
 ## Further reading
 
 - [`db/schema.sql`](db/schema.sql) - database tables and relationships

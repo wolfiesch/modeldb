@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { NavLink, Route, Routes } from 'react-router'
+import { NavLink, Route, Routes, useLocation } from 'react-router'
 import { loadMeta, useData } from './lib/data'
 import { NAVIGATION } from './lib/navigation'
+import { DEFAULT_TITLE, ROUTE_META } from './lib/routeMeta'
 import CommandPalette from './components/CommandPalette'
 import { ModelDrawerProvider } from './components/ModelDrawer'
 
@@ -20,23 +21,34 @@ const QualityLatencyPrice = lazy(() => import('./pages/QualityLatencyPrice'))
 const Changes = lazy(() => import('./pages/Changes'))
 const Lineage = lazy(() => import('./pages/Lineage'))
 const About = lazy(() => import('./pages/About'))
-function syncModelCountMeta(count: number) {
+function syncDocumentMeta(pathname: string, modelCount: number | undefined) {
   // index.html hardcodes a build-time count; live data refreshes daily
   // without rebuilds, so keep the served description in sync at runtime.
-  const content = `Interactive dashboard of ${count} AI models: LMArena ELO history, benchmark scores, token prices, context windows, and aliases, baked from a local modeldb SQLite pipeline.`
+  // Routes in ROUTE_META carry their own title and description.
+  const route = ROUTE_META[pathname.replace(/\/+$/, '') || '/']
+  const title = route?.title ?? DEFAULT_TITLE
+  const description =
+    route?.description ??
+    (modelCount == null
+      ? null
+      : `Interactive dashboard of ${modelCount} AI models: LMArena ELO history, benchmark scores, token prices, context windows, and aliases, baked from a local modeldb SQLite pipeline.`)
+  document.title = title
+  document.querySelector('meta[property="og:title"]')?.setAttribute('content', title)
+  if (description == null) return
   for (const element of document.querySelectorAll<HTMLMetaElement>(
     'meta[name="description"], meta[property="og:description"]',
   )) {
-    element.setAttribute('content', content)
+    element.setAttribute('content', description)
   }
 }
 
 export default function App() {
   const { data: meta } = useData(loadMeta)
+  const { pathname } = useLocation()
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => {
-    if (meta) syncModelCountMeta(meta.counts.models)
-  }, [meta])
+    syncDocumentMeta(pathname, meta?.counts.models)
+  }, [pathname, meta])
   return (
     <ModelDrawerProvider>
       <div className="flex h-full">
